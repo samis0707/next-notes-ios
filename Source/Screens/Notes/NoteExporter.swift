@@ -101,13 +101,7 @@ class NoteExporter: NSObject {
                 case "md":
                     do {
                         try self.text.write(to: fileURL, atomically: true, encoding: .utf8)
-                        if let viewFormatter = (self.viewController as? EditorViewController)?.noteView.viewPrintFormatter() {
-                            formatter = viewFormatter
-                            formatter.perPageContentInsets = UIEdgeInsets(top: 72, left: 72, bottom: 72, right: 72)
-                            activityItems = [formatter, self.text, fileURL]
-                        } else {
-                            activityItems = [self.text, fileURL]
-                        }
+                        activityItems = [self.text, fileURL]
                     } catch {}
                 case "html":
                     do {
