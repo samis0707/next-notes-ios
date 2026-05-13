@@ -7,25 +7,13 @@ import SwiftUI
 ///
 /// Top-level view for the notes navigation.
 ///
+/// Phase 1 of the iPhone UX rewrite ships ``NotesList`` as the pure SwiftUI
+/// replacement for the legacy `NotesTableViewController`. The editor is still
+/// the UIKit one, presented modally via ``EditorPresenter`` until Phase 2.
+///
 struct NotesView: View {
-    @State private var addNote = false
-    @State private var searchText = ""
-
     var body: some View {
-        NotesTableViewControllerRepresentable(addNote: $addNote, searchText: $searchText)
-            .ignoresSafeArea(.all)
-            .searchable(text: $searchText)
-            .toolbar {
-                Button {
-                    addNote = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-            .toolbarTitleDisplayMode(.inline)
-            .navigationTitle(String(localized: "Notes", comment: ""))
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.visible, for: .tabBar)
+        NotesList()
     }
 }
 
@@ -38,4 +26,5 @@ struct NotesView: View {
 
     return ContentView(selection: 0)
         .environment(store)
+        .environment(\.managedObjectContext, NotesData.mainThreadContext)
 }
