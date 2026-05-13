@@ -10,7 +10,9 @@ import UIKit
 enum MarkdownAction: Hashable {
     case bold
     case italic
-    case heading
+    case heading1
+    case heading2
+    case heading3
     case bulletList
     case checkbox
     case link
@@ -41,7 +43,7 @@ final class MarkdownInputAccessoryView: UIInputView {
 
     init(onAction: @escaping (MarkdownAction) -> Void) {
         self.onAction = onAction
-        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 44), inputViewStyle: .keyboard)
+        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 48), inputViewStyle: .keyboard)
         allowsSelfSizing = true
 
         toolbar.translatesAutoresizingMaskIntoConstraints = false
@@ -74,7 +76,15 @@ final class MarkdownInputAccessoryView: UIInputView {
     // MARK: - Primary toolbar
 
     private func configureItems() {
-        let heading = item(systemName: "textformat.size", action: .heading, label: "Heading")
+        // Heading button opens a sub-menu for H1 / H2 / H3 — picking a fixed
+        // size on tap would force the user to remember which level the icon
+        // maps to. A menu is more discoverable on iPhone.
+        let heading = UIBarButtonItem(
+            image: UIImage(systemName: "textformat.size"),
+            menu: headingMenu()
+        )
+        heading.accessibilityLabel = NSLocalizedString("Heading", comment: "Markdown toolbar action label")
+
         let bold = item(systemName: "bold", action: .bold, label: "Bold")
         let italic = item(systemName: "italic", action: .italic, label: "Italic")
         let bullet = item(systemName: "list.bullet", action: .bulletList, label: "Bullet list")
@@ -83,18 +93,21 @@ final class MarkdownInputAccessoryView: UIInputView {
         overflowItem.image = UIImage(systemName: "ellipsis.circle")
         overflowItem.accessibilityLabel = NSLocalizedString("More", comment: "Overflow menu in markdown toolbar")
 
+        let spacing: CGFloat = 8
         toolbar.items = [
+            .fixedSpace(4),
             heading,
-            .fixedSpace(2),
+            .fixedSpace(spacing),
             bold,
-            .fixedSpace(2),
+            .fixedSpace(spacing),
             italic,
-            .fixedSpace(2),
+            .fixedSpace(spacing),
             bullet,
-            .fixedSpace(2),
+            .fixedSpace(spacing),
             checkbox,
             .flexibleSpace(),
-            overflowItem
+            overflowItem,
+            .fixedSpace(4)
         ]
     }
 
@@ -111,6 +124,34 @@ final class MarkdownInputAccessoryView: UIInputView {
             return
         }
         onAction(action)
+    }
+
+    // MARK: - Heading menu
+
+    private func headingMenu() -> UIMenu {
+        let h1 = headingItem(level: 1, systemImage: "1.square")
+        let h2 = headingItem(level: 2, systemImage: "2.square")
+        let h3 = headingItem(level: 3, systemImage: "3.square")
+        return UIMenu(title: "", children: [h1, h2, h3])
+    }
+
+    private func headingItem(level: Int, systemImage: String) -> UIAction {
+        let action: MarkdownAction
+        let title: String
+        switch level {
+        case 1:
+            action = .heading1
+            title = NSLocalizedString("Heading 1", comment: "Heading level menu item")
+        case 2:
+            action = .heading2
+            title = NSLocalizedString("Heading 2", comment: "Heading level menu item")
+        default:
+            action = .heading3
+            title = NSLocalizedString("Heading 3", comment: "Heading level menu item")
+        }
+        return UIAction(title: title, image: UIImage(systemName: systemImage)) { [weak self] _ in
+            self?.onAction(action)
+        }
     }
 
     // MARK: - Overflow menu
@@ -171,14 +212,16 @@ private extension MarkdownAction {
         switch self {
         case .bold: return 1
         case .italic: return 2
-        case .heading: return 3
-        case .bulletList: return 4
-        case .checkbox: return 5
-        case .link: return 6
-        case .inlineCode: return 7
-        case .undo: return 8
-        case .redo: return 9
-        case .dismissKeyboard: return 10
+        case .heading1: return 3
+        case .heading2: return 4
+        case .heading3: return 5
+        case .bulletList: return 6
+        case .checkbox: return 7
+        case .link: return 8
+        case .inlineCode: return 9
+        case .undo: return 10
+        case .redo: return 11
+        case .dismissKeyboard: return 12
         }
     }
 
@@ -186,14 +229,16 @@ private extension MarkdownAction {
         switch tag {
         case 1: self = .bold
         case 2: self = .italic
-        case 3: self = .heading
-        case 4: self = .bulletList
-        case 5: self = .checkbox
-        case 6: self = .link
-        case 7: self = .inlineCode
-        case 8: self = .undo
-        case 9: self = .redo
-        case 10: self = .dismissKeyboard
+        case 3: self = .heading1
+        case 4: self = .heading2
+        case 5: self = .heading3
+        case 6: self = .bulletList
+        case 7: self = .checkbox
+        case 8: self = .link
+        case 9: self = .inlineCode
+        case 10: self = .undo
+        case 11: self = .redo
+        case 12: self = .dismissKeyboard
         default: return nil
         }
     }

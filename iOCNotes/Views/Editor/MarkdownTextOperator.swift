@@ -17,7 +17,9 @@ enum MarkdownTextOperator {
         switch action {
         case .bold: wrap(textView, with: "**", placeholder: "bold")
         case .italic: wrap(textView, with: "*", placeholder: "italic")
-        case .heading: toggleLinePrefix(textView, prefix: "# ")
+        case .heading1: setHeading(textView, level: 1)
+        case .heading2: setHeading(textView, level: 2)
+        case .heading3: setHeading(textView, level: 3)
         case .bulletList: toggleLinePrefix(textView, prefix: "- ")
         case .checkbox: toggleLinePrefix(textView, prefix: "- [ ] ")
         case .link: insertLink(textView)
@@ -49,6 +51,45 @@ enum MarkdownTextOperator {
         } else {
             textView.selectedRange = NSRange(location: selectedRange.location + tokenLength + innerLength + tokenLength, length: 0)
         }
+    }
+
+    // MARK: - Heading
+
+    private static func setHeading(_ textView: UITextView, level: Int) {
+        let prefix = String(repeating: "#", count: level) + " "
+        let nsText = textView.text as NSString
+        let selection = textView.selectedRange
+        let lineRange = nsText.lineRange(for: selection)
+        let line = nsText.substring(with: lineRange)
+        let hasNewline = line.hasSuffix("\n")
+        let trimmedLine = hasNewline ? String(line.dropLast()) : line
+
+        // Strip any existing leading '#' run + spaces.
+        var stripped = Substring(trimmedLine)
+        while stripped.first == "#" {
+            stripped = stripped.dropFirst()
+        }
+        while stripped.first == " " {
+            stripped = stripped.dropFirst()
+        }
+        let strippedString = String(stripped)
+
+        let newLine: String
+        if trimmedLine == prefix + strippedString {
+            // Toggle off — already at this heading level.
+            newLine = strippedString
+        } else {
+            newLine = prefix + strippedString
+        }
+
+        let replacement = hasNewline ? newLine + "\n" : newLine
+        textView.replaceText(in: lineRange, with: replacement)
+
+        let delta = (newLine as NSString).length - (trimmedLine as NSString).length
+        textView.selectedRange = NSRange(
+            location: max(lineRange.location, selection.location + delta),
+            length: selection.length
+        )
     }
 
     // MARK: - Line prefix
