@@ -32,8 +32,6 @@ struct NoteEditorScreen: View {
     @State private var content: String = ""
     @State private var initialized = false
 
-    @State private var canUndo = false
-    @State private var canRedo = false
     @State private var saveState: SaveState = .saved
     @State private var pendingSaveWork: Task<Void, Never>?
 
@@ -42,17 +40,7 @@ struct NoteEditorScreen: View {
     @State private var showShare = false
     @State private var showDeleteConfirm = false
 
-    @FocusState private var focus: Field?
-
-    // Held as `@State` so the underlying class instance survives across
-    // SwiftUI's view-struct recreations and keeps its weak reference to the
-    // `UITextView`.
-    @State private var textHandle = MarkdownTextViewHandle()
-
-    private enum Field: Hashable {
-        case title
-        case body
-    }
+    @FocusState private var titleFocused: Bool
 
     private enum SaveState: Equatable {
         case saved
@@ -66,10 +54,6 @@ struct NoteEditorScreen: View {
             Divider()
             MarkdownTextViewRepresentable(
                 text: $content,
-                canUndo: $canUndo,
-                canRedo: $canRedo,
-                isFocused: focus == .body,
-                handle: textHandle,
                 onTextChange: handleTextChange
             )
         }
@@ -83,15 +67,6 @@ struct NoteEditorScreen: View {
                 saveIndicator
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            if focus == .body {
-                MarkdownToolbar(canUndo: canUndo, canRedo: canRedo) { action in
-                    textHandle.apply(action)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: focus)
         .sheet(isPresented: $showPreview) {
             MarkdownPreviewSheet(
                 title: title,
@@ -134,10 +109,12 @@ struct NoteEditorScreen: View {
                 text: $title
             )
             .font(.title2.weight(.semibold))
-            .focused($focus, equals: .title)
+            .focused($titleFocused)
             .submitLabel(.next)
             .onSubmit {
-                focus = .body
+                // Hand off to the body — the UITextView gains focus when the
+                // user taps it. We dismiss the title field here.
+                titleFocused = false
             }
             .onChange(of: title) {
                 handleTitleChange()
@@ -291,9 +268,10 @@ struct NoteEditorScreen: View {
             }
         }
 
-        if note.id == 0 || note.addNeeded {
-            focus = .body
-        }
+        // The text view's first responder state is owned by UIKit. For brand
+        // new empty notes we don't auto-focus here — the user can tap into the
+        // body when ready. (An auto-focus delivered through SwiftUI to a
+        // UIViewRepresentable in iOS 17 fights the keyboard show animation.)
     }
 
     // MARK: - Persistence
