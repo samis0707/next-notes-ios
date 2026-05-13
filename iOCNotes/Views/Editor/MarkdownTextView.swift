@@ -9,12 +9,16 @@ import UIKit
 ///
 /// Reuses the mature ``MarkdownTextStorage`` and ``CheckBoxTapHandler`` engines
 /// but drops the floating `headerLabel`, the iPad-only inset gymnastics and the
-/// manual keyboard handling that lived in the legacy ``HeaderTextView``. The
-/// SwiftUI side controls the layout via `keyboardLayoutGuide` instead.
+/// manual keyboard handling that lived in the legacy ``HeaderTextView``.
+///
+/// The markdown formatting toolbar is attached as `inputAccessoryView`, the
+/// canonical iOS pattern: iOS handles showing / hiding it with the keyboard
+/// automatically and the SwiftUI side does not need to track focus.
 ///
 final class MarkdownTextView: UITextView {
     private let markdownStorage = MarkdownTextStorage()
     private let tapHandler = CheckBoxTapHandler()
+    private let accessoryView: MarkdownInputAccessoryView
 
     init() {
         let layoutManager = LayoutManager()
@@ -26,9 +30,22 @@ final class MarkdownTextView: UITextView {
 
         markdownStorage.addLayoutManager(layoutManager)
 
+        // Accessory view needs `self` to be available - we install it after `super.init`.
+        var captured: ((MarkdownAction) -> Void)?
+        self.accessoryView = MarkdownInputAccessoryView { action in
+            captured?(action)
+        }
+
         super.init(frame: .zero, textContainer: container)
 
-        // Native keyboard, accessory bar handled by the view controller / SwiftUI side.
+        captured = { [weak self] action in
+            guard let self else { return }
+            MarkdownTextOperator.apply(action, on: self)
+            self.refreshUndoButtons()
+        }
+
+        inputAccessoryView = accessoryView
+
         autocorrectionType = .default
         autocapitalizationType = .sentences
         smartDashesType = .no
@@ -43,7 +60,6 @@ final class MarkdownTextView: UITextView {
         adjustsFontForContentSizeCategory = true
         translatesAutoresizingMaskIntoConstraints = false
 
-        // Tappable checkboxes — same UX as the legacy editor.
         tapHandler.textView = self
         tapHandler.layoutManager = layoutManager
         addGestureRecognizer(tapHandler.tapGestureRecognizer)
@@ -55,8 +71,8 @@ final class MarkdownTextView: UITextView {
     }
 
     ///
-    /// Replace the entire text without disturbing the undo manager beyond the
-    /// implicit reset (we drop history on note switch).
+    /// Replace the entire text. Drops the undo stack to match the previous
+    /// editor's behaviour when switching notes.
     ///
     func setMarkdownText(_ string: String) {
         let attributed = NSAttributedString(
@@ -70,5 +86,17 @@ final class MarkdownTextView: UITextView {
         markdownStorage.setAttributedString(attributed)
         markdownStorage.endEditing()
         undoManager?.removeAllActions()
+        refreshUndoButtons()
+    }
+
+    ///
+    /// Refresh the undo / redo button states in the accessory toolbar. Call
+    /// from the delegate after each text mutation.
+    ///
+    func refreshUndoButtons() {
+        accessoryView.update(
+            canUndo: undoManager?.canUndo ?? false,
+            canRedo: undoManager?.canRedo ?? false
+        )
     }
 }
