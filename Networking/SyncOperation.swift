@@ -8,7 +8,7 @@
 
 import Foundation
 
-class SyncOperation: Operation {
+class SyncOperation: Operation, @unchecked Sendable {
 
     private let lockQueue = DispatchQueue(label: "com.peterandlinda.asyncoperation", attributes: .concurrent)
 
