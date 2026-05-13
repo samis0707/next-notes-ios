@@ -495,7 +495,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D0CFE5681888A7BD00165839 /* Build configuration list for PBXNativeTarget "iOCNotes" */;
 			buildPhases = (
-				AA592A6D2DBBB97B003A3057 /* SwiftLint */,
 				D0CFE52F1888A7BD00165839 /* Sources */,
 				D0CFE5301888A7BD00165839 /* Frameworks */,
 				D0CFE5311888A7BD00165839 /* Resources */,
@@ -639,26 +638,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		AA592A6D2DBBB97B003A3057 /* SwiftLint */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = SwiftLint;
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/zsh;
-			shellScript = "# https://github.com/realm/SwiftLint?tab=readme-ov-file#consideration-for-apple-silicon\n\nif [[ \"$(uname -m)\" == arm64 ]]\nthen\n    export PATH=\"/opt/homebrew/bin:$PATH\"\nfi\n\nif command -v swiftlint >/dev/null 2>&1\nthen\n    swiftlint\nelse\n    echo \"warning: `swiftlint` command not found - See https://github.com/realm/SwiftLint#installation for installation instructions.\"\nfi\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */

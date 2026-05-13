@@ -20,7 +20,7 @@ struct ErrorMessage {
     var body: String
 }
 
-final class NotesServerTrustPolicyManager: ServerTrustManager {
+final class NotesServerTrustPolicyManager: ServerTrustManager, @unchecked Sendable {
     override func serverTrustEvaluator(forHost host: String) -> ServerTrustEvaluating? {
         let server = KeychainHelper.server
         if KeychainHelper.allowUntrustedCertificate,
