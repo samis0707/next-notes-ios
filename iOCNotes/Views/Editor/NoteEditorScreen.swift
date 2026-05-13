@@ -45,10 +45,21 @@ struct NoteEditorScreen: View {
     @State private var showRename = false
     @State private var renameDraft = ""
 
-    // Increments each time the user picks "Find in Note" from the action
-    // menu — the MarkdownTextViewRepresentable watches the value and asks
-    // the UITextView's `findInteraction` to present its native search bar.
+    // Increments each time the user picks "Find in Note" from the floating
+    // action pill — the MarkdownTextViewRepresentable watches the value and
+    // asks the UITextView's `findInteraction` to present its native search
+    // bar.
     @State private var findToken = 0
+
+    // Drives the bottom floating action pill. The pill is hidden while the
+    // keyboard is up so the user gets the full editor area + markdown
+    // formatting bar.
+    @State private var isKeyboardVisible = false
+
+    // Pushing a fresh editor on top of the current one when the user taps
+    // the "+" button in the floating pill — stacking semantics, swipe-back
+    // returns to the previously edited note.
+    @State private var navigateToNewNoteRoute: NoteRoute?
 
     // Sensory-feedback triggers — see NotesList for the pattern.
     @State private var openTrigger = 0
@@ -135,11 +146,85 @@ struct NoteEditorScreen: View {
         } message: {
             Text("This action cannot be undone.")
         }
+        .navigationDestination(item: $navigateToNewNoteRoute) { route in
+            if let resolved = try? managedObjectContext.existingObject(with: route.objectID) as? Note {
+                NoteEditorScreen(note: resolved)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if !isKeyboardVisible {
+                floatingActionPill
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isKeyboardVisible)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
+        }
         .onAppear(perform: bootstrapIfNeeded)
         .onDisappear(perform: persistImmediately)
         .sensoryFeedback(.selection, trigger: openTrigger)
         .sensoryFeedback(.impact(weight: .light), trigger: favoriteTrigger)
         .sensoryFeedback(.warning, trigger: deleteTrigger)
+    }
+
+    // MARK: - Floating action pill
+
+    /// Five-button floating bar at the bottom of the editor, visible only
+    /// when the keyboard is hidden. Mirrors the structure of the notes list's
+    /// bottom bar for a consistent iOS-26 look.
+    private var floatingActionPill: some View {
+        HStack(spacing: 0) {
+            pillButton(systemImage: "text.page.badge.magnifyingglass", label: "Preview") {
+                showPreview = true
+            }
+            pillButton(systemImage: "square.and.arrow.up", label: "Share") {
+                showShare = true
+            }
+            pillButton(systemImage: "magnifyingglass", label: "Find in Note") {
+                findToken &+= 1
+            }
+            pillButton(systemImage: "folder", label: "Category") {
+                showCategory = true
+            }
+            pillButton(systemImage: "square.and.pencil", label: "New note", emphasised: true) {
+                createNewNoteFromEditor()
+            }
+        }
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.separator, lineWidth: 0.5))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    private func pillButton(
+        systemImage: String,
+        label: String,
+        emphasised: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18))
+                .foregroundStyle(emphasised ? Color.accentColor : Color.primary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text(label))
+    }
+
+    private func createNewNoteFromEditor() {
+        persistImmediately()
+        NoteSessionManager.shared.add(content: "", category: note.category) { newNote in
+            if let newNote {
+                Task { @MainActor in
+                    navigateToNewNoteRoute = NoteRoute(objectID: newNote.objectID)
+                }
+            }
+        }
     }
 
     // MARK: - Title + subtitle (principal toolbar slot)
@@ -209,26 +294,6 @@ struct NoteEditorScreen: View {
                 showRename = true
             } label: {
                 Label("Rename…", systemImage: "pencil")
-            }
-            Button {
-                findToken &+= 1
-            } label: {
-                Label("Find in Note", systemImage: "magnifyingglass")
-            }
-            Button {
-                showPreview = true
-            } label: {
-                Label("Preview", systemImage: "text.page.badge.magnifyingglass")
-            }
-            Button {
-                showShare = true
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-            Button {
-                showCategory = true
-            } label: {
-                Label("Category…", systemImage: "folder")
             }
             Button {
                 toggleFavorite()
