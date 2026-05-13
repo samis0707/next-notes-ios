@@ -40,6 +40,13 @@ struct NotesList: View {
     @State private var errorMessage: ErrorBanner?
     @State private var newlyCreatedRoute: NoteRoute?
 
+    // Sensory-feedback triggers. iOS 17's SwiftUI .sensoryFeedback API
+    // replaces the previous UIImpactFeedbackGenerator dance and avoids
+    // having to manually `prepare()` and `impactOccurred()`.
+    @State private var addTrigger = 0
+    @State private var deleteTrigger = 0
+    @State private var favoriteTrigger = 0
+
     var body: some View {
         Group {
             if notes.isEmpty && searchText.isEmpty {
@@ -123,6 +130,9 @@ struct NotesList: View {
         .navigationDestination(item: $newlyCreatedRoute) { route in
             editorDestination(for: route)
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: addTrigger)
+        .sensoryFeedback(.impact(weight: .light), trigger: favoriteTrigger)
+        .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
 
     @ViewBuilder
@@ -219,9 +229,7 @@ struct NotesList: View {
     // MARK: - Actions
 
     private func createNote() {
-        let hud = HapticFeedback.impact(.light)
-        hud.prepare()
-        hud.impactOccurred()
+        addTrigger &+= 1
         NoteSessionManager.shared.add(content: "", category: "") { newNote in
             if let newNote {
                 Task { @MainActor in
@@ -232,7 +240,7 @@ struct NotesList: View {
     }
 
     private func toggleFavorite(note: Note) {
-        HapticFeedback.impact(.light).impactOccurred()
+        favoriteTrigger &+= 1
         note.favorite.toggle()
         note.updateNeeded = true
         try? managedObjectContext.save()
@@ -240,7 +248,7 @@ struct NotesList: View {
     }
 
     private func delete(note: Note) {
-        HapticFeedback.notification(.warning)
+        deleteTrigger &+= 1
         NoteSessionManager.shared.delete(note: note)
         pendingDelete = nil
     }
@@ -431,14 +439,3 @@ private struct ShareSheet: UIViewControllerRepresentable {
 }
 
 // MARK: - Haptics
-
-private enum HapticFeedback {
-    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) -> UIImpactFeedbackGenerator {
-        UIImpactFeedbackGenerator(style: style)
-    }
-
-    static func notification(_ type: UINotificationFeedbackGenerator.FeedbackType) {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(type)
-    }
-}

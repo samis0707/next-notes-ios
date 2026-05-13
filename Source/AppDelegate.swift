@@ -16,7 +16,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var store = Store.shared
 
     var window: UIWindow?
-    var notesTableViewController: NotesTableViewController?
 
     ///
     /// Updated by being the `NextcloudKitDelegate`.
@@ -28,7 +27,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private let operationQueue = OperationQueue()
-    private var updateFrcDelegateNeeded = true
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         NextcloudKit.shared.setup(delegate: self)
@@ -53,44 +51,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
 
-        window?.tintColor = .ph_iconColor
+        // Phase 3 of the iPhone UX rewrite: prefer system semantic colors and
+        // SF Symbol weights over the legacy PH* palette. The brand colour
+        // applies as a tint inside `ContentView` via SwiftUI's `.tint(...)`.
+        // Only the appearances actually still consumed by visible UIKit
+        // surfaces (the system-rendered `PreviewWebView` is the main one) are
+        // configured here; the rest is delegated to SwiftUI / the system.
 
-        if #available(iOS 15, *) {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            UINavigationBar.appearance().standardAppearance = appearance
-            UINavigationBar.appearance().scrollEdgeAppearance = appearance
-        }
-
-        UINavigationBar.appearance().barTintColor = .ph_popoverButtonColor
-        UINavigationBar.appearance().shadowImage = UIImage()
-        UINavigationBar.appearance().tintColor = .ph_iconColor
-
-        UIToolbar.appearance().barTintColor = .ph_popoverButtonColor
-        UIToolbar.appearance().tintColor = .ph_iconColor
-
-        UIBarButtonItem.appearance().tintColor = .ph_textColor
-
-        UITableViewCell.appearance().backgroundColor = .ph_cellBackgroundColor
-
-        let scrollViewArray = [
-            NotesTableViewController.self,
-            CategoryTableViewController.self,
-            EditorViewController.self,
-            PreviewViewController.self,
-        ]
-        UIScrollView.appearance(whenContainedInInstancesOf: scrollViewArray).backgroundColor = .ph_cellBackgroundColor
-
-        UISwitch.appearance().onTintColor = .ph_switchTintColor
-        UISwitch.appearance().tintColor = .ph_switchTintColor
-
-        UILabel.appearance().themeColor = .ph_textColor
-        UILabel.appearance(whenContainedInInstancesOf: [UITextField.self]).themeColor = .ph_readTextColor
-
-        UITextField.appearance().textColor = .ph_textColor
-        
-        UITextView.appearance().tintColor = .ph_selectedTextColor
-        
         let contentView = ContentView()
             .environment(Store.shared)
             .environment(\.managedObjectContext, NotesData.mainThreadContext)
@@ -104,8 +71,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        notesTableViewController?.disableFetchedResultsController()
-        updateFrcDelegateNeeded = true
         scheduleAppSync()
     }
 
@@ -122,17 +87,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     
     func applicationDidBecomeActive(_ application: UIApplication) {
         store.synchronize()
-        updateFrcDelegateIfNeeded()
-    }
-    
-    private func updateFrcDelegateIfNeeded() {
-        guard updateFrcDelegateNeeded else {
-            return
+        if KeychainHelper.didSyncInBackground {
+            KeychainHelper.didSyncInBackground = false
         }
-        
-        updateFrcDelegateNeeded = false
-        notesTableViewController?.configureFetchedResultsController(performFetch: KeychainHelper.didSyncInBackground)
-        KeychainHelper.didSyncInBackground = false
     }
         
     func scheduleAppSync() {
@@ -176,9 +133,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             if let queryItems = urlComponents?.queryItems,
                 let item = queryItems.first(where: { $0.name == "note" }),
                 let content = item.value {
-                // Make sure we connect the delegate up, as this is called before the app is active
-                updateFrcDelegateIfNeeded()
-                self.notesTableViewController?.addNote(content: content)
+                // Hand the URL-scheme payload to the network manager; the
+                // SwiftUI list picks the new note up via @FetchRequest.
+                NoteSessionManager.shared.add(content: content, category: "")
             }
         } else if url.isFileURL {
             do {

@@ -45,6 +45,11 @@ struct NoteEditorScreen: View {
     @State private var showRename = false
     @State private var renameDraft = ""
 
+    // Sensory-feedback triggers — see NotesList for the pattern.
+    @State private var favoriteTrigger = 0
+    @State private var deleteTrigger = 0
+    @State private var saveSuccessTrigger = 0
+
     private enum SaveState: Equatable {
         case saved
         case dirty
@@ -126,6 +131,9 @@ struct NoteEditorScreen: View {
         }
         .onAppear(perform: bootstrapIfNeeded)
         .onDisappear(perform: persistImmediately)
+        .sensoryFeedback(.impact(weight: .light), trigger: favoriteTrigger)
+        .sensoryFeedback(.warning, trigger: deleteTrigger)
+        .sensoryFeedback(.success, trigger: saveSuccessTrigger)
     }
 
     // MARK: - Title + subtitle (principal toolbar slot)
@@ -327,6 +335,7 @@ struct NoteEditorScreen: View {
         NoteSessionManager.shared.update(note: note) {
             Task { @MainActor in
                 saveState = .saved
+                saveSuccessTrigger &+= 1
             }
         }
     }
@@ -353,16 +362,16 @@ struct NoteEditorScreen: View {
     // MARK: - Actions
 
     private func toggleFavorite() {
+        favoriteTrigger &+= 1
         note.favorite.toggle()
         note.updateNeeded = true
         try? managedObjectContext.save()
         NoteSessionManager.shared.update(note: note)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     private func deleteNote() {
         pendingSaveWork?.cancel()
-        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        deleteTrigger &+= 1
         NoteSessionManager.shared.delete(note: note)
         dismiss()
     }
