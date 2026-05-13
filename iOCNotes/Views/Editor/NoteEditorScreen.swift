@@ -43,8 +43,6 @@ struct NoteEditorScreen: View {
     @State private var showShare = false
     @State private var showDeleteConfirm = false
 
-    @FocusState private var titleFocused: Bool
-
     private enum SaveState: Equatable {
         case saved
         case dirty
@@ -53,21 +51,24 @@ struct NoteEditorScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            metadataRow
             MarkdownTextViewRepresentable(
                 text: $content,
                 onTextChange: handleTextChange
             )
         }
         .background(Color(.systemBackground))
+        .navigationTitle($title)
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: title) {
+            handleTitleChange()
+        }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                saveIndicator
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 actionMenu
-            }
-            ToolbarItem(placement: .principal) {
-                saveIndicator
             }
         }
         .sheet(isPresented: $showPreview) {
@@ -103,67 +104,47 @@ struct NoteEditorScreen: View {
         .onDisappear(perform: persistImmediately)
     }
 
-    // MARK: - Header
+    // MARK: - Metadata row
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField(
-                String(localized: "Title", comment: "Title field placeholder in the note editor"),
-                text: $title
-            )
-            .textFieldStyle(.plain)
-            .font(.title2.weight(.semibold))
-            .focused($titleFocused)
-            .submitLabel(.next)
-            .onSubmit {
-                // Hand off to the body — the UITextView gains focus when the
-                // user taps it. We dismiss the title field here.
-                titleFocused = false
-            }
-            .onChange(of: title) {
-                handleTitleChange()
-            }
+    /// Thin caption-sized strip directly under the navigation bar. The title
+    /// itself lives in the navigation title (editable via the iOS 17 rename
+    /// affordance — tap the title in the nav bar to rename).
+    private var metadataRow: some View {
+        HStack(spacing: 8) {
+            Text(formattedDate ?? "")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
-                Text(formattedDate ?? "")
+            Spacer(minLength: 8)
+
+            Button {
+                showCategory = true
+            } label: {
+                if note.category.isEmpty {
+                    Label {
+                        Text("Add Category")
+                    } icon: {
+                        Image(systemName: "folder")
+                    }
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                if note.category.isEmpty == false {
-                    Button {
-                        showCategory = true
-                    } label: {
-                        Text(note.category)
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.15))
-                            )
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .buttonStyle(.plain)
                 } else {
-                    Button {
-                        showCategory = true
-                    } label: {
-                        Label {
-                            Text("Add Category")
-                        } icon: {
-                            Image(systemName: "folder")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
+                    Text(note.category)
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.accentColor.opacity(0.15))
+                        )
+                        .foregroundStyle(Color.accentColor)
                 }
-
-                Spacer()
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 
     // MARK: - Action menu
@@ -207,25 +188,23 @@ struct NoteEditorScreen: View {
 
     // MARK: - Save indicator
 
+    /// Tiny, unobtrusive save indicator placed in the leading nav bar slot so
+    /// the editable title can remain centered. Disappears entirely when
+    /// everything is saved.
     @ViewBuilder
     private var saveIndicator: some View {
         switch saveState {
         case .saved:
             EmptyView()
         case .dirty:
-            HStack(spacing: 4) {
-                Circle().fill(Color.orange).frame(width: 6, height: 6)
-                Text("Unsaved")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 7, height: 7)
+                .accessibilityLabel(Text("Unsaved changes"))
         case .saving:
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.small)
-                Text("Saving…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel(Text("Saving"))
         }
     }
 

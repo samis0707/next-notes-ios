@@ -27,15 +27,32 @@ enum MarkdownAction: Hashable {
 ///
 /// Five primary formatting buttons stay visible on every iPhone width (down to
 /// iPhone SE / 4-inch screens). The less frequently used actions live in a
-/// trailing overflow menu so the bar never spills off-screen. Attached to the
-/// ``MarkdownTextView`` via `inputAccessoryView` so iOS handles show / hide
-/// automatically with the keyboard.
+/// trailing overflow menu rendered as a popover.
+///
+/// Design notes:
+///
+/// * The input view is taller than the toolbar so there is a visible gap
+///   between the buttons and the keyboard keys below.
+/// * SF Symbols use `regular` weight — the default in a toolbar context is
+///   semibold which the iOS 26 look made appear "bold".
+/// * Menu items (heading, overflow) are backed by `UIButton` with
+///   `showsMenuAsPrimaryAction = true` so the menu appears as a popover from
+///   the button instead of replacing the toolbar inline.
 ///
 final class MarkdownInputAccessoryView: UIInputView {
-    private let toolbar = UIToolbar()
-    private let overflowItem = UIBarButtonItem()
 
-    // Overflow actions whose enabled state we want to reflect in the menu.
+    // Layout constants.
+    private let toolbarHeight: CGFloat = 44
+    private let bottomGap: CGFloat = 10
+    private let horizontalInset: CGFloat = 6
+
+    private let toolbar = UIToolbar()
+
+    // Buttons whose state we may want to refresh after construction.
+    private var headingButton: UIButton!
+    private var overflowButton: UIButton!
+
+    // Overflow actions whose enabled state we reflect in the menu.
     private var canUndo = false
     private var canRedo = false
 
@@ -43,16 +60,22 @@ final class MarkdownInputAccessoryView: UIInputView {
 
     init(onAction: @escaping (MarkdownAction) -> Void) {
         self.onAction = onAction
-        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 48), inputViewStyle: .keyboard)
+        super.init(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 44 + 10),
+            inputViewStyle: .keyboard
+        )
         allowsSelfSizing = true
 
         toolbar.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.setBackgroundImage(UIImage(), forToolbarPosition: .any, barMetrics: .default)
+        toolbar.setShadowImage(UIImage(), forToolbarPosition: .any)
+        toolbar.isTranslucent = true
         addSubview(toolbar)
         NSLayoutConstraint.activate([
             toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
             toolbar.topAnchor.constraint(equalTo: topAnchor),
-            toolbar.bottomAnchor.constraint(equalTo: bottomAnchor)
+            toolbar.heightAnchor.constraint(equalToConstant: toolbarHeight)
         ])
 
         configureItems()
@@ -62,6 +85,10 @@ final class MarkdownInputAccessoryView: UIInputView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported for MarkdownInputAccessoryView")
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: toolbarHeight + bottomGap)
     }
 
     func update(canUndo: Bool, canRedo: Bool) {
@@ -76,26 +103,22 @@ final class MarkdownInputAccessoryView: UIInputView {
     // MARK: - Primary toolbar
 
     private func configureItems() {
-        // Heading button opens a sub-menu for H1 / H2 / H3 — picking a fixed
-        // size on tap would force the user to remember which level the icon
-        // maps to. A menu is more discoverable on iPhone.
-        let heading = UIBarButtonItem(
-            image: UIImage(systemName: "textformat.size"),
-            menu: headingMenu()
-        )
-        heading.accessibilityLabel = NSLocalizedString("Heading", comment: "Markdown toolbar action label")
+        let headingBtn = menuButton(systemName: "textformat.size", accessibilityLabel: "Heading", menu: headingMenu())
+        self.headingButton = headingBtn
+        let heading = UIBarButtonItem(customView: headingBtn)
 
         let bold = item(systemName: "bold", action: .bold, label: "Bold")
         let italic = item(systemName: "italic", action: .italic, label: "Italic")
         let bullet = item(systemName: "list.bullet", action: .bulletList, label: "Bullet list")
         let checkbox = item(systemName: "checklist", action: .checkbox, label: "Checkbox")
 
-        overflowItem.image = UIImage(systemName: "ellipsis.circle")
-        overflowItem.accessibilityLabel = NSLocalizedString("More", comment: "Overflow menu in markdown toolbar")
+        let overflowBtn = menuButton(systemName: "ellipsis.circle", accessibilityLabel: "More", menu: UIMenu())
+        self.overflowButton = overflowBtn
+        let overflow = UIBarButtonItem(customView: overflowBtn)
 
         let spacing: CGFloat = 8
         toolbar.items = [
-            .fixedSpace(4),
+            .fixedSpace(horizontalInset),
             heading,
             .fixedSpace(spacing),
             bold,
@@ -106,13 +129,15 @@ final class MarkdownInputAccessoryView: UIInputView {
             .fixedSpace(spacing),
             checkbox,
             .flexibleSpace(),
-            overflowItem,
-            .fixedSpace(4)
+            overflow,
+            .fixedSpace(horizontalInset)
         ]
     }
 
+    // MARK: - Buttons
+
     private func item(systemName: String, action: MarkdownAction, label: String) -> UIBarButtonItem {
-        let image = UIImage(systemName: systemName)
+        let image = symbolImage(named: systemName)
         let item = UIBarButtonItem(image: image, style: .plain, target: self, action: #selector(handleTap(_:)))
         item.accessibilityLabel = NSLocalizedString(label, comment: "Markdown toolbar action label")
         item.tag = action.tag
@@ -126,30 +151,55 @@ final class MarkdownInputAccessoryView: UIInputView {
         onAction(action)
     }
 
+    ///
+    /// Backed by a `UIButton` so the menu pops up as a popover anchored to the
+    /// button rather than expanding inline and hiding the rest of the toolbar.
+    ///
+    private func menuButton(systemName: String, accessibilityLabel: String, menu: UIMenu) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(symbolImage(named: systemName), for: .normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.menu = menu
+        button.showsMenuAsPrimaryAction = true
+        button.accessibilityLabel = NSLocalizedString(accessibilityLabel, comment: "Markdown toolbar action label")
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+        return button
+    }
+
+    private func symbolImage(named name: String) -> UIImage? {
+        let configuration = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        return UIImage(systemName: name, withConfiguration: configuration)
+    }
+
     // MARK: - Heading menu
 
     private func headingMenu() -> UIMenu {
-        let h1 = headingItem(level: 1, systemImage: "1.square")
-        let h2 = headingItem(level: 2, systemImage: "2.square")
-        let h3 = headingItem(level: 3, systemImage: "3.square")
-        return UIMenu(title: "", children: [h1, h2, h3])
+        UIMenu(title: NSLocalizedString("Heading", comment: "Markdown toolbar action label"), children: [
+            headingItem(level: 1),
+            headingItem(level: 2),
+            headingItem(level: 3)
+        ])
     }
 
-    private func headingItem(level: Int, systemImage: String) -> UIAction {
+    private func headingItem(level: Int) -> UIAction {
         let action: MarkdownAction
         let title: String
+        let image: String
         switch level {
         case 1:
             action = .heading1
             title = NSLocalizedString("Heading 1", comment: "Heading level menu item")
+            image = "1.square"
         case 2:
             action = .heading2
             title = NSLocalizedString("Heading 2", comment: "Heading level menu item")
+            image = "2.square"
         default:
             action = .heading3
             title = NSLocalizedString("Heading 3", comment: "Heading level menu item")
+            image = "3.square"
         }
-        return UIAction(title: title, image: UIImage(systemName: systemImage)) { [weak self] _ in
+        return UIAction(title: title, image: UIImage(systemName: image)) { [weak self] _ in
             self?.onAction(action)
         }
     }
@@ -157,35 +207,14 @@ final class MarkdownInputAccessoryView: UIInputView {
     // MARK: - Overflow menu
 
     private func refreshOverflowMenu() {
-        let link = menuAction(
-            title: "Link",
-            systemImage: "link",
-            action: .link
-        )
-        let code = menuAction(
-            title: "Inline code",
-            systemImage: "chevron.left.forwardslash.chevron.right",
-            action: .inlineCode
-        )
-        let undo = menuAction(
-            title: "Undo",
-            systemImage: "arrow.uturn.backward",
-            action: .undo,
-            enabled: canUndo
-        )
-        let redo = menuAction(
-            title: "Redo",
-            systemImage: "arrow.uturn.forward",
-            action: .redo,
-            enabled: canRedo
-        )
-        let dismiss = menuAction(
-            title: "Hide keyboard",
-            systemImage: "keyboard.chevron.compact.down",
-            action: .dismissKeyboard
-        )
-
-        overflowItem.menu = UIMenu(title: "", children: [link, code, undo, redo, dismiss])
+        let menu = UIMenu(title: "", children: [
+            menuAction(title: "Link", systemImage: "link", action: .link),
+            menuAction(title: "Inline code", systemImage: "chevron.left.forwardslash.chevron.right", action: .inlineCode),
+            menuAction(title: "Undo", systemImage: "arrow.uturn.backward", action: .undo, enabled: canUndo),
+            menuAction(title: "Redo", systemImage: "arrow.uturn.forward", action: .redo, enabled: canRedo),
+            menuAction(title: "Hide keyboard", systemImage: "keyboard.chevron.compact.down", action: .dismissKeyboard)
+        ])
+        overflowButton?.menu = menu
     }
 
     private func menuAction(
