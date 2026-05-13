@@ -31,6 +31,9 @@ struct NoteEditorScreen: View {
     @State private var title: String = ""
     @State private var content: String = ""
     @State private var initialized = false
+    // Set to true the first time the user mutates the editor so the async
+    // server fetch from `bootstrapIfNeeded` no longer overwrites their typing.
+    @State private var userHasEdited = false
 
     @State private var saveState: SaveState = .saved
     @State private var pendingSaveWork: Task<Void, Never>?
@@ -108,6 +111,7 @@ struct NoteEditorScreen: View {
                 String(localized: "Title", comment: "Title field placeholder in the note editor"),
                 text: $title
             )
+            .textFieldStyle(.plain)
             .font(.title2.weight(.semibold))
             .focused($titleFocused)
             .submitLabel(.next)
@@ -254,10 +258,14 @@ struct NoteEditorScreen: View {
 
         // Fetch the latest server-side content asynchronously while showing the
         // local cached copy. Mirrors the legacy editor's behaviour without HUD.
+        // Crucially, the response is only applied if the user has not yet
+        // started typing — otherwise a slow server response would overwrite
+        // freshly-typed characters and snap the cursor back to the start of
+        // the document.
         if !note.addNeeded {
             NoteSessionManager.shared.get(note: note) {
                 Task { @MainActor in
-                    guard initialized else { return }
+                    guard initialized, !userHasEdited else { return }
                     if note.content != content {
                         content = note.content
                     }
@@ -279,12 +287,14 @@ struct NoteEditorScreen: View {
     private func handleTitleChange() {
         guard initialized else { return }
         if note.title == title { return }
+        userHasEdited = true
         scheduleSave()
     }
 
     private func handleTextChange() {
         guard initialized else { return }
         if note.content == content { return }
+        userHasEdited = true
         scheduleSave()
     }
 

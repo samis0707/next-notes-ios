@@ -29,6 +29,19 @@ struct MarkdownTextViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: MarkdownTextView, context: Context) {
         context.coordinator.parent = self
+
+        // While the user is editing, the UITextView is authoritative. SwiftUI
+        // @State updates can lag a keystroke or two behind, so a naive sync
+        // here would race against fast typing: SwiftUI would see a stale
+        // `text` value, decide it differs from `uiView.text`, call
+        // `setMarkdownText`, and snap the cursor back to position 0 — losing
+        // any characters typed in between. We only sync from binding to
+        // text view when the field is not the first responder, which is the
+        // only case where an external value (server fetch, undo from outside)
+        // should overwrite the local content.
+        guard !uiView.isFirstResponder else {
+            return
+        }
         if uiView.text != text {
             uiView.setMarkdownText(text)
         }
