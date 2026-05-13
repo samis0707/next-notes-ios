@@ -18,6 +18,7 @@ import UIKit
 ///
 struct MarkdownTextViewRepresentable: UIViewRepresentable {
     @Binding var text: String
+    let findToken: Int
     let onTextChange: () -> Void
 
     func makeUIView(context: Context) -> MarkdownTextView {
@@ -29,6 +30,17 @@ struct MarkdownTextViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: MarkdownTextView, context: Context) {
         context.coordinator.parent = self
+
+        // Present the iOS-native find navigator when the SwiftUI side bumps
+        // the token. We compare against the coordinator's last-seen value so
+        // re-renders triggered by unrelated state changes don't re-open the
+        // search bar.
+        if findToken != context.coordinator.lastFindToken {
+            context.coordinator.lastFindToken = findToken
+            if findToken > 0 {
+                uiView.findInteraction?.presentFindNavigator(showingReplace: false)
+            }
+        }
 
         // While the user is editing, the UITextView is authoritative. SwiftUI
         // @State updates can lag a keystroke or two behind, so a naive sync
@@ -53,6 +65,7 @@ struct MarkdownTextViewRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextViewRepresentable
+        var lastFindToken = 0
 
         init(parent: MarkdownTextViewRepresentable) {
             self.parent = parent

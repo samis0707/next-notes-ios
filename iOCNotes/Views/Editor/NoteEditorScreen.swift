@@ -45,7 +45,13 @@ struct NoteEditorScreen: View {
     @State private var showRename = false
     @State private var renameDraft = ""
 
+    // Increments each time the user picks "Find in Note" from the action
+    // menu — the MarkdownTextViewRepresentable watches the value and asks
+    // the UITextView's `findInteraction` to present its native search bar.
+    @State private var findToken = 0
+
     // Sensory-feedback triggers — see NotesList for the pattern.
+    @State private var openTrigger = 0
     @State private var favoriteTrigger = 0
     @State private var deleteTrigger = 0
 
@@ -58,6 +64,7 @@ struct NoteEditorScreen: View {
     var body: some View {
         MarkdownTextViewRepresentable(
             text: $content,
+            findToken: findToken,
             onTextChange: handleTextChange
         )
         .background(Color(.systemBackground))
@@ -130,6 +137,7 @@ struct NoteEditorScreen: View {
         }
         .onAppear(perform: bootstrapIfNeeded)
         .onDisappear(perform: persistImmediately)
+        .sensoryFeedback(.selection, trigger: openTrigger)
         .sensoryFeedback(.impact(weight: .light), trigger: favoriteTrigger)
         .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
@@ -203,6 +211,11 @@ struct NoteEditorScreen: View {
                 Label("Rename…", systemImage: "pencil")
             }
             Button {
+                findToken &+= 1
+            } label: {
+                Label("Find in Note", systemImage: "magnifyingglass")
+            }
+            Button {
                 showPreview = true
             } label: {
                 Label("Preview", systemImage: "text.page.badge.magnifyingglass")
@@ -260,6 +273,13 @@ struct NoteEditorScreen: View {
         guard !initialized else {
             return
         }
+        // Fire the "note opened" haptic once per editor lifecycle. Doing it
+        // here covers both NavigationLink taps in the list and programmatic
+        // pushes via the `newlyCreatedRoute` binding without touching the
+        // tap recogniser on the row (which iOS 26's NavigationLink doesn't
+        // tolerate a simultaneousGesture next to).
+        openTrigger &+= 1
+
         title = note.title
         content = note.content
         initialized = true

@@ -59,6 +59,11 @@ final class MarkdownTextView: UITextView {
         font = .preferredFont(forTextStyle: .body)
         adjustsFontForContentSizeCategory = true
         translatesAutoresizingMaskIntoConstraints = false
+        // Activate the iOS-native Find / Replace bar (iOS 16+). The system
+        // presents its own search UI above the keyboard; the SwiftUI side
+        // only needs to call `presentFindNavigator(...)` when the user picks
+        // "Find in Note" from the action menu.
+        isFindInteractionEnabled = true
 
         tapHandler.textView = self
         tapHandler.layoutManager = layoutManager
