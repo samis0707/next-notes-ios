@@ -15,6 +15,7 @@ import SwiftUI
 ///
 struct SettingsView: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @Environment(Store.self) var store
 
     @State var fileExtension: FileSuffix?
@@ -150,6 +151,16 @@ struct SettingsView: View {
                 Text("Enter a name for the folder where notes should be saved on the server")
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Done")
+                    }
+                }
+            }
         }
     }
 }

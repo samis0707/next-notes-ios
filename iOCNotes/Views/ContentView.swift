@@ -8,12 +8,17 @@ import SwiftUI
 ///
 /// Top level router for views based on availability of local accounts.
 ///
-/// See ``NotesView``, ``SettingsView`` and ``ServerAddressView`` for previews in context of this.
+/// See ``NotesView``, ``SettingsView`` and ``ServerAddressView`` for previews
+/// in context of this.
+///
+/// The iOS-26 UI rewrite drops the previous bottom `TabView` (Notes / Settings)
+/// in favour of a single notes screen. Settings is presented as a sheet via a
+/// gear button in the top-right of the navigation bar.
 ///
 struct ContentView: View {
     @Environment(Store.self) var store
 
-    @State var selection: Int = 0
+    @State private var showSettings = false
 
     var sharedAccounts: [SharedAccount] {
         store.sharedAccounts.compactMap {
@@ -43,39 +48,14 @@ struct ContentView: View {
                 store.cancelPolling()
             }
             .onAppear {
-                // The store must update its list of shared accounts when the login user interface is about to appear.
                 store.readSharedAccounts()
             }
-
         } else {
-            TabView(selection: $selection) {
-                NavigationStack {
-                    NotesView()
-                }
-                .tabItem {
-                    Label(
-                        title: {
-                            Text("Notes")
-                        },
-                        icon: {
-                            Image(systemName: "note")
-                        }
-                    )
-                }
-                .tag(0)
-
+            NavigationStack {
+                NotesView(showSettings: $showSettings)
+            }
+            .sheet(isPresented: $showSettings) {
                 SettingsView()
-                .tabItem {
-                    Label(
-                        title: {
-                            Text("Settings")
-                        },
-                        icon: {
-                            Image(systemName: "gear")
-                        }
-                    )
-                }
-                .tag(1)
             }
             .tint(Color(NCBrandColor.shared.brandColor))
         }
