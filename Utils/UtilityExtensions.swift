@@ -44,37 +44,6 @@ extension UIImage {
     
 }
 
-extension UIColor {
-
-    static let ph_backgroundColor = UIColor(named: "PHWhiteBackground")!
-    static let ph_cellBackgroundColor = UIColor(named: "PHWhiteCellBackground")!
-    static let ph_cellSelectionColor = UIColor(named: "PHWhiteCellSelection")!
-    static let ph_iconColor = UIColor(named: "PHWhiteIcon")!
-    static let ph_textColor = UIColor(named: "PHWhiteText")!
-    static let ph_readTextColor = UIColor(named: "PHWhiteReadText")!
-    static let ph_linkColor = UIColor(named: "PHWhiteLink")!
-    static let ph_popoverBackgroundColor = UIColor(named: "PHWhitePopoverBackground")!
-    static let ph_popoverButtonColor = UIColor(named: "PHWhitePopoverButton")!
-    static let ph_popoverBorderColor = UIColor(named: "PHWhitePopoverBorder")!
-//    static let ph_popoverIconColor = UIColor(named: "PHWhitePopoverIcon")!
-    static let ph_switchTintColor = UIColor(named: "PHWhitePopoverBorder")!
-    static let ph_selectedTextColor = UIColor(named: "PHSelectedText")!
-
-}
-
-extension UILabel {
-
-    @objc dynamic var themeColor: UIColor {
-        get {
-            self.textColor
-        }
-        set {
-            self.textColor = newValue
-        }
-    }
-
-}
-
 extension String {
     
     func truncate(length: Int, trailing: String = "…") -> String {

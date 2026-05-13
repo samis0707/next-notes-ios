@@ -48,7 +48,6 @@ struct NoteEditorScreen: View {
     // Sensory-feedback triggers — see NotesList for the pattern.
     @State private var favoriteTrigger = 0
     @State private var deleteTrigger = 0
-    @State private var saveSuccessTrigger = 0
 
     private enum SaveState: Equatable {
         case saved
@@ -133,7 +132,6 @@ struct NoteEditorScreen: View {
         .onDisappear(perform: persistImmediately)
         .sensoryFeedback(.impact(weight: .light), trigger: favoriteTrigger)
         .sensoryFeedback(.warning, trigger: deleteTrigger)
-        .sensoryFeedback(.success, trigger: saveSuccessTrigger)
     }
 
     // MARK: - Title + subtitle (principal toolbar slot)
@@ -335,7 +333,6 @@ struct NoteEditorScreen: View {
         NoteSessionManager.shared.update(note: note) {
             Task { @MainActor in
                 saveState = .saved
-                saveSuccessTrigger &+= 1
             }
         }
     }
