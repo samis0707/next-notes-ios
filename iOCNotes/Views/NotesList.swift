@@ -42,9 +42,11 @@ struct NotesList: View {
 
     // Sensory-feedback triggers. iOS 17's SwiftUI .sensoryFeedback API
     // replaces the previous UIImpactFeedbackGenerator dance and avoids
-    // having to manually `prepare()` and `impactOccurred()`.
+    // having to manually `prepare()` and `impactOccurred()`. The
+    // open-note haptic fires inside ``NoteEditorScreen`` once the editor
+    // appears (attaching it as a simultaneousGesture on the row's
+    // NavigationLink blocked the tap recogniser on iOS 26).
     @State private var addTrigger = 0
-    @State private var openTrigger = 0
     @State private var deleteTrigger = 0
     @State private var favoriteTrigger = 0
 
@@ -132,7 +134,6 @@ struct NotesList: View {
             editorDestination(for: route)
         }
         .sensoryFeedback(.impact(weight: .light), trigger: addTrigger)
-        .sensoryFeedback(.selection, trigger: openTrigger)
         .sensoryFeedback(.impact(weight: .light), trigger: favoriteTrigger)
         .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
@@ -162,14 +163,6 @@ struct NotesList: View {
                 NavigationLink(value: NoteRoute(objectID: note.objectID)) {
                     NoteRow(note: note)
                 }
-                    // Fires a soft selection haptic the moment the user taps
-                    // the row. SwiftUI's NavigationLink doesn't expose an
-                    // onTap callback so a simultaneous tap gesture is used to
-                    // attach the side effect without intercepting the
-                    // navigation itself.
-                    .simultaneousGesture(TapGesture().onEnded {
-                        openTrigger &+= 1
-                    })
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
                             pendingDelete = note
