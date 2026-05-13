@@ -42,6 +42,8 @@ struct NoteEditorScreen: View {
     @State private var showCategory = false
     @State private var showShare = false
     @State private var showDeleteConfirm = false
+    @State private var showRename = false
+    @State private var renameDraft = ""
 
     private enum SaveState: Equatable {
         case saved
@@ -50,25 +52,48 @@ struct NoteEditorScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            metadataRow
-            MarkdownTextViewRepresentable(
-                text: $content,
-                onTextChange: handleTextChange
-            )
-        }
+        MarkdownTextViewRepresentable(
+            text: $content,
+            onTextChange: handleTextChange
+        )
         .background(Color(.systemBackground))
-        .navigationTitle($title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
         .onChange(of: title) {
             handleTitleChange()
         }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                titleAndSubtitle
+            }
             ToolbarItem(placement: .topBarLeading) {
                 saveIndicator
             }
             ToolbarItem(placement: .topBarTrailing) {
+                previewButton
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 actionMenu
+            }
+        }
+        .alert(
+            String(localized: "Rename note", comment: "Title of rename alert"),
+            isPresented: $showRename
+        ) {
+            TextField(
+                String(localized: "Title", comment: "Placeholder for title text field"),
+                text: $renameDraft
+            )
+            Button(role: .cancel) {
+                showRename = false
+            } label: {
+                Text("Cancel")
+            }
+            Button {
+                title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                showRename = false
+            } label: {
+                Text("Save")
             }
         }
         .sheet(isPresented: $showPreview) {
@@ -104,58 +129,68 @@ struct NoteEditorScreen: View {
         .onDisappear(perform: persistImmediately)
     }
 
-    // MARK: - Metadata row
+    // MARK: - Title + subtitle (principal toolbar slot)
 
-    /// Thin caption-sized strip directly under the navigation bar. The title
-    /// itself lives in the navigation title (editable via the iOS 17 rename
-    /// affordance — tap the title in the nav bar to rename).
-    private var metadataRow: some View {
-        HStack(spacing: 8) {
-            Text(formattedDate ?? "")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    /// Centered title with date · category subtitle directly underneath, all
+    /// inside the navigation bar's principal slot. Tapping opens a rename
+    /// alert. This is the iOS-26 style "compact two-line nav title".
+    private var titleAndSubtitle: some View {
+        Button {
+            renameDraft = title
+            showRename = true
+        } label: {
+            VStack(spacing: 0) {
+                Text(title.isEmpty ? String(localized: "Untitled", comment: "Placeholder title for a note without a name") : title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-            Spacer(minLength: 8)
-
-            Button {
-                showCategory = true
-            } label: {
-                if note.category.isEmpty {
-                    Label {
-                        Text("Add Category")
-                    } icon: {
-                        Image(systemName: "folder")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text(note.category)
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color.accentColor.opacity(0.15))
-                        )
-                        .foregroundStyle(Color.accentColor)
+                if let subtitle = subtitleText {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: 220)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 4)
+        .buttonStyle(.plain)
+        .accessibilityHint(Text("Rename"))
+    }
+
+    private var subtitleText: String? {
+        let datePart = formattedDate
+        let categoryPart = note.category.isEmpty ? nil : note.category
+        switch (datePart, categoryPart) {
+        case (nil, nil):
+            return nil
+        case (let d?, nil):
+            return d
+        case (nil, let c?):
+            return c
+        case (let d?, let c?):
+            return "\(d) · \(c)"
+        }
+    }
+
+    // MARK: - Preview button
+
+    private var previewButton: some View {
+        Button {
+            showPreview = true
+        } label: {
+            Image(systemName: "text.page.badge.magnifyingglass")
+                .accessibilityLabel(Text("Preview"))
+        }
     }
 
     // MARK: - Action menu
 
     private var actionMenu: some View {
         Menu {
-            Button {
-                showPreview = true
-            } label: {
-                Label("Preview", systemImage: "text.page.badge.magnifyingglass")
-            }
             Button {
                 showShare = true
             } label: {
