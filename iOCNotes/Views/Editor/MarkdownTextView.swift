@@ -20,7 +20,7 @@ final class MarkdownTextView: UITextView {
         let layoutManager = LayoutManager()
         layoutManager.delegate = layoutManager
 
-        let container = NSTextContainer(size: CGSize(width: 0, height: .greatestFiniteMagnitude))
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
         layoutManager.addTextContainer(container)
 
