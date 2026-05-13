@@ -23,15 +23,19 @@ enum MarkdownAction: Hashable {
 ///
 /// `UIToolbar` shown above the keyboard while editing a note.
 ///
-/// Attached to the ``MarkdownTextView`` via `inputAccessoryView` so iOS handles
-/// show / hide automatically with the keyboard. This avoids the SwiftUI focus
-/// dance that caused the keyboard to disappear after every keystroke in an
-/// earlier iteration.
+/// Five primary formatting buttons stay visible on every iPhone width (down to
+/// iPhone SE / 4-inch screens). The less frequently used actions live in a
+/// trailing overflow menu so the bar never spills off-screen. Attached to the
+/// ``MarkdownTextView`` via `inputAccessoryView` so iOS handles show / hide
+/// automatically with the keyboard.
 ///
 final class MarkdownInputAccessoryView: UIInputView {
     private let toolbar = UIToolbar()
-    private weak var undoItem: UIBarButtonItem?
-    private weak var redoItem: UIBarButtonItem?
+    private let overflowItem = UIBarButtonItem()
+
+    // Overflow actions whose enabled state we want to reflect in the menu.
+    private var canUndo = false
+    private var canRedo = false
 
     let onAction: (MarkdownAction) -> Void
 
@@ -50,6 +54,7 @@ final class MarkdownInputAccessoryView: UIInputView {
         ])
 
         configureItems()
+        refreshOverflowMenu()
     }
 
     @available(*, unavailable)
@@ -58,49 +63,38 @@ final class MarkdownInputAccessoryView: UIInputView {
     }
 
     func update(canUndo: Bool, canRedo: Bool) {
-        undoItem?.isEnabled = canUndo
-        redoItem?.isEnabled = canRedo
+        guard self.canUndo != canUndo || self.canRedo != canRedo else {
+            return
+        }
+        self.canUndo = canUndo
+        self.canRedo = canRedo
+        refreshOverflowMenu()
     }
 
-    // MARK: - Setup
+    // MARK: - Primary toolbar
 
     private func configureItems() {
-        let flexible = UIBarButtonItem.flexibleSpace()
-        let fixed: () -> UIBarButtonItem = {
-            let item = UIBarButtonItem.fixedSpace(2)
-            return item
-        }
-
         let heading = item(systemName: "textformat.size", action: .heading, label: "Heading")
         let bold = item(systemName: "bold", action: .bold, label: "Bold")
         let italic = item(systemName: "italic", action: .italic, label: "Italic")
         let bullet = item(systemName: "list.bullet", action: .bulletList, label: "Bullet list")
         let checkbox = item(systemName: "checklist", action: .checkbox, label: "Checkbox")
-        let link = item(systemName: "link", action: .link, label: "Link")
-        let code = item(systemName: "chevron.left.forwardslash.chevron.right", action: .inlineCode, label: "Inline code")
 
-        let undo = item(systemName: "arrow.uturn.backward", action: .undo, label: "Undo")
-        undo.isEnabled = false
-        undoItem = undo
-
-        let redo = item(systemName: "arrow.uturn.forward", action: .redo, label: "Redo")
-        redo.isEnabled = false
-        redoItem = redo
-
-        let dismiss = item(systemName: "keyboard.chevron.compact.down", action: .dismissKeyboard, label: "Hide keyboard")
+        overflowItem.image = UIImage(systemName: "ellipsis.circle")
+        overflowItem.accessibilityLabel = NSLocalizedString("More", comment: "Overflow menu in markdown toolbar")
 
         toolbar.items = [
-            heading, fixed(),
-            bold, fixed(),
-            italic, fixed(),
-            bullet, fixed(),
-            checkbox, fixed(),
-            link, fixed(),
-            code,
-            flexible,
-            undo, fixed(),
-            redo, fixed(),
-            dismiss
+            heading,
+            .fixedSpace(2),
+            bold,
+            .fixedSpace(2),
+            italic,
+            .fixedSpace(2),
+            bullet,
+            .fixedSpace(2),
+            checkbox,
+            .flexibleSpace(),
+            overflowItem
         ]
     }
 
@@ -117,6 +111,56 @@ final class MarkdownInputAccessoryView: UIInputView {
             return
         }
         onAction(action)
+    }
+
+    // MARK: - Overflow menu
+
+    private func refreshOverflowMenu() {
+        let link = menuAction(
+            title: "Link",
+            systemImage: "link",
+            action: .link
+        )
+        let code = menuAction(
+            title: "Inline code",
+            systemImage: "chevron.left.forwardslash.chevron.right",
+            action: .inlineCode
+        )
+        let undo = menuAction(
+            title: "Undo",
+            systemImage: "arrow.uturn.backward",
+            action: .undo,
+            enabled: canUndo
+        )
+        let redo = menuAction(
+            title: "Redo",
+            systemImage: "arrow.uturn.forward",
+            action: .redo,
+            enabled: canRedo
+        )
+        let dismiss = menuAction(
+            title: "Hide keyboard",
+            systemImage: "keyboard.chevron.compact.down",
+            action: .dismissKeyboard
+        )
+
+        overflowItem.menu = UIMenu(title: "", children: [link, code, undo, redo, dismiss])
+    }
+
+    private func menuAction(
+        title: String,
+        systemImage: String,
+        action: MarkdownAction,
+        enabled: Bool = true
+    ) -> UIAction {
+        let localized = NSLocalizedString(title, comment: "Markdown toolbar overflow menu item")
+        return UIAction(
+            title: localized,
+            image: UIImage(systemName: systemImage),
+            attributes: enabled ? [] : .disabled
+        ) { [weak self] _ in
+            self?.onAction(action)
+        }
     }
 }
 
