@@ -1,0 +1,461 @@
+// SPDX-FileCopyrightText: Nextcloud GmbH
+// SPDX-FileCopyrightText: 2025 Iva Horn
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import CoreData
+import SwiftUI
+import UIKit
+
+///
+/// Native SwiftUI replacement for the legacy ``EditorViewController``.
+///
+/// What's new compared to Phase 1's modal UIKit editor:
+///
+/// * Separate title field at the top — users no longer rely on the first body
+///   line for the title.
+/// * Markdown formatting toolbar above the keyboard with B / I / heading /
+///   bullet / checkbox / link / code / undo / redo (the biggest single
+///   thumb-friendliness win from the audit).
+/// * Compact navigation bar: a single `⋯` menu groups Preview / Share /
+///   Category / Delete instead of seven crammed bar buttons.
+/// * Inline save indicator (dot + status text) so the user knows a save is in
+///   flight or has just completed.
+/// * Preview is presented as a sheet instead of a separate screen.
+///
+struct NoteEditorScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var managedObjectContext
+
+    @ObservedObject var note: Note
+
+    @State private var title: String = ""
+    @State private var content: String = ""
+    @State private var initialized = false
+
+    @State private var canUndo = false
+    @State private var canRedo = false
+    @State private var saveState: SaveState = .saved
+    @State private var pendingSaveWork: Task<Void, Never>?
+
+    @State private var showPreview = false
+    @State private var showCategory = false
+    @State private var showShare = false
+    @State private var showDeleteConfirm = false
+
+    @FocusState private var focus: Field?
+
+    // Held as `@State` so the underlying class instance survives across
+    // SwiftUI's view-struct recreations and keeps its weak reference to the
+    // `UITextView`.
+    @State private var textHandle = MarkdownTextViewHandle()
+
+    private enum Field: Hashable {
+        case title
+        case body
+    }
+
+    private enum SaveState: Equatable {
+        case saved
+        case dirty
+        case saving
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            MarkdownTextViewRepresentable(
+                text: $content,
+                canUndo: $canUndo,
+                canRedo: $canRedo,
+                isFocused: focus == .body,
+                handle: textHandle,
+                onTextChange: handleTextChange
+            )
+        }
+        .background(Color(.systemBackground))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                actionMenu
+            }
+            ToolbarItem(placement: .principal) {
+                saveIndicator
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if focus == .body {
+                MarkdownToolbar(canUndo: canUndo, canRedo: canRedo) { action in
+                    textHandle.apply(action)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: focus)
+        .sheet(isPresented: $showPreview) {
+            MarkdownPreviewSheet(
+                title: title,
+                date: formattedDate,
+                content: content
+            )
+        }
+        .sheet(isPresented: $showCategory) {
+            NoteCategorySheet(note: note)
+        }
+        .sheet(isPresented: $showShare) {
+            ShareSheet(items: shareItems)
+        }
+        .confirmationDialog(
+            Text("Delete this note?"),
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                deleteNote()
+            } label: {
+                Text("Delete")
+            }
+            Button(role: .cancel) {} label: {
+                Text("Cancel")
+            }
+        } message: {
+            Text("This action cannot be undone.")
+        }
+        .onAppear(perform: bootstrapIfNeeded)
+        .onDisappear(perform: persistImmediately)
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField(
+                String(localized: "Title", comment: "Title field placeholder in the note editor"),
+                text: $title
+            )
+            .font(.title2.weight(.semibold))
+            .focused($focus, equals: .title)
+            .submitLabel(.next)
+            .onSubmit {
+                focus = .body
+            }
+            .onChange(of: title) {
+                handleTitleChange()
+            }
+
+            HStack(spacing: 8) {
+                Text(formattedDate ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if note.category.isEmpty == false {
+                    Button {
+                        showCategory = true
+                    } label: {
+                        Text(note.category)
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.15))
+                            )
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        showCategory = true
+                    } label: {
+                        Label {
+                            Text("Add Category")
+                        } icon: {
+                            Image(systemName: "folder")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Action menu
+
+    private var actionMenu: some View {
+        Menu {
+            Button {
+                showPreview = true
+            } label: {
+                Label("Preview", systemImage: "text.page.badge.magnifyingglass")
+            }
+            Button {
+                showShare = true
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                showCategory = true
+            } label: {
+                Label("Category…", systemImage: "folder")
+            }
+            Button {
+                toggleFavorite()
+            } label: {
+                Label(
+                    note.favorite ? "Unfavorite" : "Favorite",
+                    systemImage: note.favorite ? "star.slash" : "star.fill"
+                )
+            }
+            Divider()
+            Button(role: .destructive) {
+                showDeleteConfirm = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .accessibilityLabel(Text("Actions"))
+        }
+    }
+
+    // MARK: - Save indicator
+
+    @ViewBuilder
+    private var saveIndicator: some View {
+        switch saveState {
+        case .saved:
+            EmptyView()
+        case .dirty:
+            HStack(spacing: 4) {
+                Circle().fill(Color.orange).frame(width: 6, height: 6)
+                Text("Unsaved")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .saving:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.small)
+                Text("Saving…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - State
+
+    private var formattedDate: String? {
+        guard note.modified > 0 else {
+            return nil
+        }
+        let date = Date(timeIntervalSince1970: note.modified)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return formatter.string(from: date)
+    }
+
+    private var shareItems: [Any] {
+        let header = title.isEmpty ? String(localized: "Untitled", comment: "Default share subject") : title
+        return ["\(header)\n\n\(content)"]
+    }
+
+    private func bootstrapIfNeeded() {
+        guard !initialized else {
+            return
+        }
+        title = note.title
+        content = note.content
+        initialized = true
+
+        // Fetch the latest server-side content asynchronously while showing the
+        // local cached copy. Mirrors the legacy editor's behaviour without HUD.
+        if !note.addNeeded {
+            NoteSessionManager.shared.get(note: note) {
+                Task { @MainActor in
+                    guard initialized else { return }
+                    if note.content != content {
+                        content = note.content
+                    }
+                    if note.title != title {
+                        title = note.title
+                    }
+                }
+            }
+        }
+
+        if note.id == 0 || note.addNeeded {
+            focus = .body
+        }
+    }
+
+    // MARK: - Persistence
+
+    private func handleTitleChange() {
+        guard initialized else { return }
+        if note.title == title { return }
+        scheduleSave()
+    }
+
+    private func handleTextChange() {
+        guard initialized else { return }
+        if note.content == content { return }
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        saveState = .dirty
+        pendingSaveWork?.cancel()
+        pendingSaveWork = Task { [content, title] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                performSave(content: content, title: title)
+            }
+        }
+    }
+
+    private func performSave(content: String, title: String) {
+        if note.content == content && note.title == title {
+            saveState = .saved
+            return
+        }
+
+        note.content = content
+        note.title = title.isEmpty ? deriveTitle(from: content) : title
+        note.updateNeeded = true
+        try? managedObjectContext.save()
+
+        saveState = .saving
+        NoteSessionManager.shared.update(note: note) {
+            Task { @MainActor in
+                saveState = .saved
+            }
+        }
+    }
+
+    private func persistImmediately() {
+        pendingSaveWork?.cancel()
+        if note.content != content || note.title != title {
+            performSave(content: content, title: title)
+        }
+    }
+
+    private func deriveTitle(from body: String) -> String {
+        let firstLine = body
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstLine, !firstLine.isEmpty else {
+            return String(localized: "New note", comment: "Default title for new notes")
+        }
+        return String(firstLine.prefix(60))
+    }
+
+    // MARK: - Actions
+
+    private func toggleFavorite() {
+        note.favorite.toggle()
+        note.updateNeeded = true
+        try? managedObjectContext.save()
+        NoteSessionManager.shared.update(note: note)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func deleteNote() {
+        pendingSaveWork?.cancel()
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        NoteSessionManager.shared.delete(note: note)
+        dismiss()
+    }
+}
+
+// MARK: - Helpers reused from NotesList
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct NoteCategorySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var managedObjectContext
+
+    @ObservedObject var note: Note
+    @State private var draftCategory: String = ""
+
+    private var existingCategories: [String] {
+        let request = Note.fetchRequest()
+        request.predicate = NSPredicate(format: "deleteNeeded == NO AND category != ''")
+        let categories = (try? managedObjectContext.fetch(request))?.map(\.category) ?? []
+        return Array(Set(categories)).sorted()
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(
+                        String(localized: "Category", comment: "Placeholder for category text field"),
+                        text: $draftCategory
+                    )
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.words)
+                }
+
+                if existingCategories.isEmpty == false {
+                    Section(String(localized: "Existing", comment: "Section header for existing categories")) {
+                        ForEach(existingCategories, id: \.self) { category in
+                            Button {
+                                draftCategory = category
+                            } label: {
+                                HStack {
+                                    Text(category).foregroundStyle(.primary)
+                                    Spacer()
+                                    if draftCategory == category {
+                                        Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(Text("Category"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Text("Cancel") }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { save() } label: { Text("Save") }
+                }
+            }
+            .onAppear { draftCategory = note.category }
+        }
+    }
+
+    private func save() {
+        let trimmed = draftCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+        if note.category != trimmed {
+            note.category = trimmed
+            note.updateNeeded = true
+            try? managedObjectContext.save()
+            NoteSessionManager.shared.update(note: note)
+        }
+        dismiss()
+    }
+}
