@@ -59,18 +59,17 @@ struct NoteEditorScreen: View {
         .background(Color(.systemBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarTitleDisplayMode(.inline)
+        // The iOS 26 nav bar otherwise paints a "Liquid Glass" material strip
+        // behind the back button, title and action menu which the user reads
+        // as a chrome box bolted onto the editor. Hidden = the markdown body
+        // shows through and the chrome is just the buttons themselves.
+        .toolbarBackground(.hidden, for: .navigationBar)
         .onChange(of: title) {
             handleTitleChange()
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 titleAndSubtitle
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                saveIndicator
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                previewButton
             }
             ToolbarItem(placement: .topBarTrailing) {
                 actionMenu
@@ -161,29 +160,29 @@ struct NoteEditorScreen: View {
         .accessibilityHint(Text("Rename"))
     }
 
+    /// Untertitel-Text. Während einer Bearbeitung oder eines Saves verdrängt
+    /// der Status das normale Datum · Kategorie — so taucht der Save-Status
+    /// genau dort auf, wo der Nutzer den Titel ohnehin liest, ohne ein
+    /// weiteres UI-Element in der Navi-Leiste.
     private var subtitleText: String? {
-        let datePart = formattedDate
-        let categoryPart = note.category.isEmpty ? nil : note.category
-        switch (datePart, categoryPart) {
-        case (nil, nil):
-            return nil
-        case (let d?, nil):
-            return d
-        case (nil, let c?):
-            return c
-        case (let d?, let c?):
-            return "\(d) · \(c)"
-        }
-    }
-
-    // MARK: - Preview button
-
-    private var previewButton: some View {
-        Button {
-            showPreview = true
-        } label: {
-            Image(systemName: "text.page.badge.magnifyingglass")
-                .accessibilityLabel(Text("Preview"))
+        switch saveState {
+        case .saving:
+            return String(localized: "Saving…", comment: "Subtitle shown while autosave is in flight")
+        case .dirty:
+            return String(localized: "Edited", comment: "Subtitle shown while there are unsaved changes")
+        case .saved:
+            let datePart = formattedDate
+            let categoryPart = note.category.isEmpty ? nil : note.category
+            switch (datePart, categoryPart) {
+            case (nil, nil):
+                return nil
+            case (let d?, nil):
+                return d
+            case (nil, let c?):
+                return c
+            case (let d?, let c?):
+                return "\(d) · \(c)"
+            }
         }
     }
 
@@ -191,6 +190,17 @@ struct NoteEditorScreen: View {
 
     private var actionMenu: some View {
         Menu {
+            Button {
+                renameDraft = title
+                showRename = true
+            } label: {
+                Label("Rename…", systemImage: "pencil")
+            }
+            Button {
+                showPreview = true
+            } label: {
+                Label("Preview", systemImage: "text.page.badge.magnifyingglass")
+            }
             Button {
                 showShare = true
             } label: {
@@ -218,28 +228,6 @@ struct NoteEditorScreen: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .accessibilityLabel(Text("Actions"))
-        }
-    }
-
-    // MARK: - Save indicator
-
-    /// Tiny, unobtrusive save indicator placed in the leading nav bar slot so
-    /// the editable title can remain centered. Disappears entirely when
-    /// everything is saved.
-    @ViewBuilder
-    private var saveIndicator: some View {
-        switch saveState {
-        case .saved:
-            EmptyView()
-        case .dirty:
-            Circle()
-                .fill(Color.orange)
-                .frame(width: 7, height: 7)
-                .accessibilityLabel(Text("Unsaved changes"))
-        case .saving:
-            ProgressView()
-                .controlSize(.small)
-                .accessibilityLabel(Text("Saving"))
         }
     }
 
