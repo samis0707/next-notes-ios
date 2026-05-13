@@ -7,9 +7,10 @@ import SwiftUI
 ///
 /// Top-level view for the notes navigation.
 ///
-/// Phase 1 of the iPhone UX rewrite ships ``NotesList`` as the pure SwiftUI
-/// replacement for the legacy `NotesTableViewController`. The editor is still
-/// the UIKit one, presented modally via ``EditorPresenter`` until Phase 2.
+/// Phase 1 introduced ``NotesList`` as the SwiftUI replacement for the legacy
+/// `NotesTableViewController`. Phase 2 pushes ``NoteEditorScreen`` (also pure
+/// SwiftUI) onto the NavigationStack rather than presenting the legacy UIKit
+/// editor modally.
 ///
 struct NotesView: View {
     var body: some View {

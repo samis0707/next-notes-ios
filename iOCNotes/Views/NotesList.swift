@@ -8,9 +8,10 @@ import SwiftUI
 ///
 /// SwiftUI replacement for the legacy `NotesTableViewController`.
 ///
-/// Phase 1 of the iPhone UX rewrite ships this list and keeps the existing
-/// UIKit editor reachable through ``EditorPresenter``. The list itself is now
-/// fully native SwiftUI:
+/// Phase 1 of the iPhone UX rewrite shipped this list as a pure SwiftUI
+/// replacement for the legacy `NotesTableViewController`. Phase 2 wires it up
+/// to the new native ``NoteEditorScreen`` instead of pushing into the old
+/// UIKit editor.
 ///
 /// * `@FetchRequest` over the existing `Note` Core Data entity
 /// * `.searchable` with predicate updates instead of manual `performFetch`
@@ -37,6 +38,7 @@ struct NotesList: View {
     @State private var shareItem: ShareItem?
     @State private var pendingDelete: Note?
     @State private var errorMessage: ErrorBanner?
+    @State private var newlyCreatedRoute: NoteRoute?
 
     var body: some View {
         Group {
@@ -115,12 +117,27 @@ struct NotesList: View {
         .sheet(item: $shareItem) { item in
             ShareSheet(items: item.items)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .deletingNote)) { notification in
-            // The legacy `EditorViewController` only posts this notification when
-            // its delete button is tapped; the actual persistence is the
-            // observer's responsibility (was: `NotesTableViewController`).
-            if let editor = notification.object as? EditorViewController, let note = editor.note {
-                NoteSessionManager.shared.delete(note: note)
+        .navigationDestination(for: NoteRoute.self) { route in
+            editorDestination(for: route)
+        }
+        .navigationDestination(item: $newlyCreatedRoute) { route in
+            editorDestination(for: route)
+        }
+    }
+
+    @ViewBuilder
+    private func editorDestination(for route: NoteRoute) -> some View {
+        if let resolved = try? managedObjectContext.existingObject(with: route.objectID) as? Note {
+            NoteEditorScreen(note: resolved)
+        } else {
+            ContentUnavailableView {
+                Label {
+                    Text("Note unavailable")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+            } description: {
+                Text("This note could not be loaded.")
             }
         }
     }
@@ -130,12 +147,9 @@ struct NotesList: View {
     private var listContent: some View {
         List {
             ForEach(notes, id: \.objectID) { note in
-                Button {
-                    open(note: note, isNew: false)
-                } label: {
+                NavigationLink(value: NoteRoute(objectID: note.objectID)) {
                     NoteRow(note: note)
                 }
-                .buttonStyle(.plain)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
                             pendingDelete = note
@@ -169,9 +183,7 @@ struct NotesList: View {
                         .tint(.indigo)
                     }
                     .contextMenu {
-                        Button {
-                            open(note: note, isNew: false)
-                        } label: {
+                        NavigationLink(value: NoteRoute(objectID: note.objectID)) {
                             Label("Open", systemImage: "doc.text")
                         }
                         Button {
@@ -212,14 +224,11 @@ struct NotesList: View {
         hud.impactOccurred()
         NoteSessionManager.shared.add(content: "", category: "") { newNote in
             if let newNote {
-                EditorPresenter.present(note: newNote, isNewNote: true)
+                Task { @MainActor in
+                    newlyCreatedRoute = NoteRoute(objectID: newNote.objectID)
+                }
             }
         }
-    }
-
-    private func open(note: Note, isNew: Bool) {
-        HapticFeedback.selection()
-        EditorPresenter.present(note: note, isNewNote: isNew)
     }
 
     private func toggleFavorite(note: Note) {
@@ -310,6 +319,19 @@ private struct ErrorBanner: Identifiable {
     let id = UUID()
     let title: String
     let message: String
+}
+
+///
+/// Hashable + Identifiable navigation token wrapping a `Note`'s managed object
+/// ID. SwiftUI's NavigationStack needs `Hashable` for value-based pushes and a
+/// stable `Identifiable` conformance for programmatic pushes via
+/// `.navigationDestination(item:)`. Note itself isn't usable directly because
+/// equality + hashing of NSManagedObject is identity-based and changes if the
+/// object is refaulted.
+///
+struct NoteRoute: Hashable, Identifiable {
+    let objectID: NSManagedObjectID
+    var id: NSManagedObjectID { objectID }
 }
 
 // MARK: - Category Editor Sheet
@@ -413,11 +435,6 @@ private struct ShareSheet: UIViewControllerRepresentable {
 private enum HapticFeedback {
     static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) -> UIImpactFeedbackGenerator {
         UIImpactFeedbackGenerator(style: style)
-    }
-
-    static func selection() {
-        let generator = UISelectionFeedbackGenerator()
-        generator.selectionChanged()
     }
 
     static func notification(_ type: UINotificationFeedbackGenerator.FeedbackType) {
