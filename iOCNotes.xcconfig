@@ -1,8 +1,26 @@
 // Build settings for the whole project.
+//
+// Signing-related keys (DEVELOPMENT_TEAM, PRODUCT_BUNDLE_IDENTIFIER,
+// CODE_SIGN_STYLE, etc.) live here so that contributors can override them
+// without touching the tracked Xcode project file. Put your personal
+// values into `LocalSigning.xcconfig` (gitignored — see
+// `LocalSigning.xcconfig.sample`) and they will shadow these defaults.
 
 CURRENT_PROJECT_VERSION = 1
 ENABLE_USER_SCRIPT_SANDBOXING = NO
 INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2025 Nextcloud GmbH. All rights reserved.
 IPHONEOS_DEPLOYMENT_TARGET = 17.0
 MARKETING_VERSION = 4.5.0
+
+// Signing defaults — overridable in LocalSigning.xcconfig.
 PRODUCT_BUNDLE_IDENTIFIER = com.peterandlinda.iOCNotes
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM =
+PROVISIONING_PROFILE_SPECIFIER =
+INFOPLIST_KEY_CFBundleDisplayName = Nextcloud Notes
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+
+// Optional local override. The `?` suffix means Xcode silently ignores a
+// missing file, so contributors who don't need overrides build with the
+// defaults above.
+#include? "LocalSigning.xcconfig"
