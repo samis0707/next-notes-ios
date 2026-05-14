@@ -1,0 +1,33 @@
+// Copy this file to `LocalSigning.xcconfig` and edit it with your own values.
+// The actual `LocalSigning.xcconfig` is gitignored so your personal
+// signing identity, team and bundle id never end up in a commit. Removing
+// them from the tracked `iOCNotes.xcconfig` / `project.pbxproj` means
+// Xcode's automatic file edits no longer cause merge conflicts on pull.
+//
+// All keys are optional. Anything you leave commented out keeps whatever
+// default `iOCNotes.xcconfig` provides.
+
+// Your Apple Developer Team ID. Visible under
+// Xcode → Settings → Accounts → Manage Certificates, or on
+// developer.apple.com/account → Membership details.
+//
+// DEVELOPMENT_TEAM = ABCDE12345
+
+// Bundle identifier. Anything reverse-DNS that you own works for personal
+// installs. Defaults to com.peterandlinda.iOCNotes which is the upstream
+// app and only works for the original author's Apple ID.
+//
+// PRODUCT_BUNDLE_IDENTIFIER = com.example.iOCNotes
+
+// Display name as shown under the icon on the home screen.
+//
+// INFOPLIST_KEY_CFBundleDisplayName = Notes
+
+// App Store category used when archiving / uploading. Personal installs
+// don't care about this.
+//
+// INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+
+// Provisioning profile name. Leave blank for automatic signing.
+//
+// PROVISIONING_PROFILE_SPECIFIER =

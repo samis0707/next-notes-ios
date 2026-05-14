@@ -15,6 +15,9 @@ Custom/
 GoogleService-Info.plist
 DevicePushKey-Info.plist
 
+## Local-only signing override (see LocalSigning.xcconfig.sample)
+LocalSigning.xcconfig
+
 ## Xcode
 *.xcuserstate
 .DS_Store
