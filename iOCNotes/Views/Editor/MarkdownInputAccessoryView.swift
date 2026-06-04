@@ -10,49 +10,58 @@ import UIKit
 enum MarkdownAction: Hashable {
     case bold
     case italic
+    case strikethrough
     case heading1
     case heading2
     case heading3
     case bulletList
+    case numberedList
     case checkbox
+    case blockquote
     case link
     case inlineCode
+    case codeBlock
     case undo
     case redo
     case dismissKeyboard
 }
 
 ///
-/// `UIToolbar` shown above the keyboard while editing a note.
+/// Bar shown above the keyboard while editing a note.
 ///
-/// Five primary formatting buttons stay visible on every iPhone width (down to
-/// iPhone SE / 4-inch screens). The less frequently used actions live in a
-/// trailing overflow menu rendered as a popover.
+/// Modelled on the iOS 26 Apple Notes formatting bar: a single floating,
+/// capsule-rounded glass pill whose contents *scroll horizontally* so every
+/// formatting action is reachable with a swipe instead of being hidden behind
+/// an overflow menu.
 ///
 /// Design notes:
 ///
-/// * The input view is taller than the toolbar so there is a visible gap
-///   between the buttons and the keyboard keys below.
-/// * SF Symbols use `regular` weight — the default in a toolbar context is
-///   semibold which the iOS 26 look made appear "bold".
-/// * Menu items (heading, overflow) are backed by `UIButton` with
-///   `showsMenuAsPrimaryAction = true` so the menu appears as a popover from
-///   the button instead of replacing the toolbar inline.
+/// * The actions live on a *single* glass/material surface (Liquid Glass on
+///   iOS 26) shaped as a floating pill — the "Tahoe" look. We deliberately
+///   avoid `UIToolbar` / `UIBarButtonItem`: on iOS 26 those render every item
+///   in its own floating glass capsule, which reads as a row of separate
+///   buttons rather than one bar. Plain `UIButton`s inside a `UIScrollView` on
+///   a shared rounded `UIVisualEffectView` give us the scrolling pill.
+/// * The keyboard-dismiss button is pinned at the trailing edge, outside the
+///   scroll area, so it is always reachable without scrolling.
+/// * SF Symbols use `semibold` weight to match the bolder glass button styling
+///   used elsewhere in the app.
+/// * The heading button presents H1 / H2 / H3 as a popover menu.
 ///
 final class MarkdownInputAccessoryView: UIInputView {
 
     // Layout constants.
-    private let toolbarHeight: CGFloat = 44
+    private let barHeight: CGFloat = 44
+    private let topGap: CGFloat = 6
     private let bottomGap: CGFloat = 10
-    private let horizontalInset: CGFloat = 6
+    private let sideInset: CGFloat = 10
+    private let horizontalInset: CGFloat = 14
+    private let itemSpacing: CGFloat = 16
 
-    private let toolbar = UIToolbar()
+    // Buttons whose enabled state we refresh after text mutations.
+    private var undoButton: UIButton!
+    private var redoButton: UIButton!
 
-    // Buttons whose state we may want to refresh after construction.
-    private var headingButton: UIButton!
-    private var overflowButton: UIButton!
-
-    // Overflow actions whose enabled state we reflect in the menu.
     private var canUndo = false
     private var canRedo = false
 
@@ -61,25 +70,15 @@ final class MarkdownInputAccessoryView: UIInputView {
     init(onAction: @escaping (MarkdownAction) -> Void) {
         self.onAction = onAction
         super.init(
-            frame: CGRect(x: 0, y: 0, width: 320, height: 44 + 10),
-            inputViewStyle: .keyboard
+            frame: CGRect(x: 0, y: 0, width: 320, height: 6 + 44 + 10),
+            inputViewStyle: .default
         )
         allowsSelfSizing = true
-
-        toolbar.translatesAutoresizingMaskIntoConstraints = false
-        toolbar.setBackgroundImage(UIImage(), forToolbarPosition: .any, barMetrics: .default)
-        toolbar.setShadowImage(UIImage(), forToolbarPosition: .any)
-        toolbar.isTranslucent = true
-        addSubview(toolbar)
-        NSLayoutConstraint.activate([
-            toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            toolbar.topAnchor.constraint(equalTo: topAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: toolbarHeight)
-        ])
-
-        configureItems()
-        refreshOverflowMenu()
+        // Transparent surround so the capsule reads as a floating pill rather
+        // than a bar sitting on a keyboard-coloured strip.
+        backgroundColor = .clear
+        configureBar()
+        refreshUndoRedoState()
     }
 
     @available(*, unavailable)
@@ -88,7 +87,7 @@ final class MarkdownInputAccessoryView: UIInputView {
     }
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: toolbarHeight + bottomGap)
+        CGSize(width: UIView.noIntrinsicMetric, height: topGap + barHeight + bottomGap)
     }
 
     func update(canUndo: Bool, canRedo: Bool) {
@@ -97,63 +96,119 @@ final class MarkdownInputAccessoryView: UIInputView {
         }
         self.canUndo = canUndo
         self.canRedo = canRedo
-        refreshOverflowMenu()
+        refreshUndoRedoState()
     }
 
-    // MARK: - Primary toolbar
+    // MARK: - Bar construction
 
-    private func configureItems() {
-        let headingBtn = menuButton(systemName: "textformat.size", accessibilityLabel: "Heading", menu: headingMenu())
-        self.headingButton = headingBtn
-        let heading = UIBarButtonItem(customView: headingBtn)
+    private func configureBar() {
+        let bar = makeBarSurface()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        // Shape the glass surface as a capsule pill so it floats above the
+        // keyboard rather than spanning the full width as a flush bar.
+        bar.layer.cornerRadius = barHeight / 2
+        bar.layer.cornerCurve = .continuous
+        bar.clipsToBounds = true
+        addSubview(bar)
 
-        let bold = item(systemName: "bold", action: .bold, label: "Bold")
-        let italic = item(systemName: "italic", action: .italic, label: "Italic")
-        let bullet = item(systemName: "list.bullet", action: .bulletList, label: "Bullet list")
-        let checkbox = item(systemName: "checklist", action: .checkbox, label: "Checkbox")
+        let undo = actionButton(systemName: "arrow.uturn.backward", action: .undo, label: "Undo")
+        let redo = actionButton(systemName: "arrow.uturn.forward", action: .redo, label: "Redo")
+        self.undoButton = undo
+        self.redoButton = redo
 
-        let overflowBtn = menuButton(systemName: "ellipsis.circle", accessibilityLabel: "More", menu: UIMenu())
-        self.overflowButton = overflowBtn
-        let overflow = UIBarButtonItem(customView: overflowBtn)
-
-        let spacing: CGFloat = 8
-        toolbar.items = [
-            .fixedSpace(horizontalInset),
-            heading,
-            .fixedSpace(spacing),
-            bold,
-            .fixedSpace(spacing),
-            italic,
-            .fixedSpace(spacing),
-            bullet,
-            .fixedSpace(spacing),
-            checkbox,
-            .flexibleSpace(),
-            overflow,
-            .fixedSpace(horizontalInset)
+        // The full, scrollable list of formatting actions, in logical groups:
+        // structure, inline emphasis, code, lists, quote, link, history.
+        let buttons: [UIButton] = [
+            menuButton(systemName: "textformat.size", accessibilityLabel: "Heading", menu: headingMenu()),
+            actionButton(systemName: "bold", action: .bold, label: "Bold"),
+            actionButton(systemName: "italic", action: .italic, label: "Italic"),
+            actionButton(systemName: "strikethrough", action: .strikethrough, label: "Strikethrough"),
+            actionButton(systemName: "list.bullet", action: .bulletList, label: "Bullet list"),
+            actionButton(systemName: "list.number", action: .numberedList, label: "Numbered list"),
+            actionButton(systemName: "checklist", action: .checkbox, label: "Checkbox"),
+            actionButton(systemName: "text.quote", action: .blockquote, label: "Quote"),
+            actionButton(systemName: "link", action: .link, label: "Link"),
+            actionButton(systemName: "chevron.left.forwardslash.chevron.right", action: .inlineCode, label: "Inline code"),
+            actionButton(systemName: "curlybraces", action: .codeBlock, label: "Code block"),
+            undo,
+            redo
         ]
+
+        let stack = UIStackView(arrangedSubviews: buttons)
+        stack.axis = .horizontal
+        stack.alignment = .fill
+        stack.distribution = .fill
+        stack.spacing = itemSpacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let scroll = UIScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.showsVerticalScrollIndicator = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(stack)
+
+        // Pinned dismiss button — always reachable, never scrolls away.
+        let dismiss = actionButton(systemName: "keyboard.chevron.compact.down", action: .dismissKeyboard, label: "Hide keyboard")
+
+        bar.contentView.addSubview(scroll)
+        bar.contentView.addSubview(dismiss)
+
+        let content = bar.contentView
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: sideInset),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -sideInset),
+            bar.topAnchor.constraint(equalTo: topAnchor, constant: topGap),
+            bar.heightAnchor.constraint(equalToConstant: barHeight),
+
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: horizontalInset),
+            scroll.topAnchor.constraint(equalTo: content.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scroll.trailingAnchor.constraint(equalTo: dismiss.leadingAnchor, constant: -itemSpacing),
+
+            dismiss.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -horizontalInset),
+            dismiss.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+
+            // The stack defines the scroll view's content size; pin to the
+            // content layout guide and match the visible height so buttons
+            // fill the bar vertically (giving 44pt tap targets).
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor)
+        ])
+    }
+
+    ///
+    /// A single bar surface: real Liquid Glass on iOS 26, a system-material
+    /// blur on iOS 17–25 where `UIGlassEffect` does not exist.
+    ///
+    private func makeBarSurface() -> UIVisualEffectView {
+        if #available(iOS 26.0, *) {
+            return UIVisualEffectView(effect: UIGlassEffect())
+        } else {
+            return UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        }
     }
 
     // MARK: - Buttons
 
-    private func item(systemName: String, action: MarkdownAction, label: String) -> UIBarButtonItem {
-        let image = symbolImage(named: systemName)
-        let item = UIBarButtonItem(image: image, style: .plain, target: self, action: #selector(handleTap(_:)))
-        item.accessibilityLabel = NSLocalizedString(label, comment: "Markdown toolbar action label")
-        item.tag = action.tag
-        return item
-    }
-
-    @objc private func handleTap(_ sender: UIBarButtonItem) {
-        guard let action = MarkdownAction(tag: sender.tag) else {
-            return
-        }
-        onAction(action)
+    private func actionButton(systemName: String, action: MarkdownAction, label: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(symbolImage(named: systemName), for: .normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityLabel = NSLocalizedString(label, comment: "Markdown toolbar action label")
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.addAction(UIAction { [weak self] _ in
+            self?.onAction(action)
+        }, for: .touchUpInside)
+        return button
     }
 
     ///
-    /// Backed by a `UIButton` so the menu pops up as a popover anchored to the
-    /// button rather than expanding inline and hiding the rest of the toolbar.
+    /// A `UIButton` whose menu pops up as a popover anchored to the button.
     ///
     private func menuButton(systemName: String, accessibilityLabel: String, menu: UIMenu) -> UIButton {
         let button = UIButton(type: .system)
@@ -162,13 +217,20 @@ final class MarkdownInputAccessoryView: UIInputView {
         button.menu = menu
         button.showsMenuAsPrimaryAction = true
         button.accessibilityLabel = NSLocalizedString(accessibilityLabel, comment: "Markdown toolbar action label")
-        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         return button
     }
 
     private func symbolImage(named name: String) -> UIImage? {
-        let configuration = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        let configuration = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         return UIImage(systemName: name, withConfiguration: configuration)
+    }
+
+    private func refreshUndoRedoState() {
+        undoButton?.isEnabled = canUndo
+        redoButton?.isEnabled = canRedo
     }
 
     // MARK: - Heading menu
@@ -201,74 +263,6 @@ final class MarkdownInputAccessoryView: UIInputView {
         }
         return UIAction(title: title, image: UIImage(systemName: image)) { [weak self] _ in
             self?.onAction(action)
-        }
-    }
-
-    // MARK: - Overflow menu
-
-    private func refreshOverflowMenu() {
-        let menu = UIMenu(title: "", children: [
-            menuAction(title: "Link", systemImage: "link", action: .link),
-            menuAction(title: "Inline code", systemImage: "chevron.left.forwardslash.chevron.right", action: .inlineCode),
-            menuAction(title: "Undo", systemImage: "arrow.uturn.backward", action: .undo, enabled: canUndo),
-            menuAction(title: "Redo", systemImage: "arrow.uturn.forward", action: .redo, enabled: canRedo),
-            menuAction(title: "Hide keyboard", systemImage: "keyboard.chevron.compact.down", action: .dismissKeyboard)
-        ])
-        overflowButton?.menu = menu
-    }
-
-    private func menuAction(
-        title: String,
-        systemImage: String,
-        action: MarkdownAction,
-        enabled: Bool = true
-    ) -> UIAction {
-        let localized = NSLocalizedString(title, comment: "Markdown toolbar overflow menu item")
-        return UIAction(
-            title: localized,
-            image: UIImage(systemName: systemImage),
-            attributes: enabled ? [] : .disabled
-        ) { [weak self] _ in
-            self?.onAction(action)
-        }
-    }
-}
-
-// MARK: - Tag encoding
-
-private extension MarkdownAction {
-    var tag: Int {
-        switch self {
-        case .bold: return 1
-        case .italic: return 2
-        case .heading1: return 3
-        case .heading2: return 4
-        case .heading3: return 5
-        case .bulletList: return 6
-        case .checkbox: return 7
-        case .link: return 8
-        case .inlineCode: return 9
-        case .undo: return 10
-        case .redo: return 11
-        case .dismissKeyboard: return 12
-        }
-    }
-
-    init?(tag: Int) {
-        switch tag {
-        case 1: self = .bold
-        case 2: self = .italic
-        case 3: self = .heading1
-        case 4: self = .heading2
-        case 5: self = .heading3
-        case 6: self = .bulletList
-        case 7: self = .checkbox
-        case 8: self = .link
-        case 9: self = .inlineCode
-        case 10: self = .undo
-        case 11: self = .redo
-        case 12: self = .dismissKeyboard
-        default: return nil
         }
     }
 }

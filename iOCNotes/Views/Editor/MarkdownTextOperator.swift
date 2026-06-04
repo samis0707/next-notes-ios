@@ -17,13 +17,17 @@ enum MarkdownTextOperator {
         switch action {
         case .bold: wrap(textView, with: "**", placeholder: "bold")
         case .italic: wrap(textView, with: "*", placeholder: "italic")
+        case .strikethrough: wrap(textView, with: "~~", placeholder: "strikethrough")
         case .heading1: setHeading(textView, level: 1)
         case .heading2: setHeading(textView, level: 2)
         case .heading3: setHeading(textView, level: 3)
         case .bulletList: toggleLinePrefix(textView, prefix: "- ")
+        case .numberedList: toggleLinePrefix(textView, prefix: "1. ")
         case .checkbox: toggleLinePrefix(textView, prefix: "- [ ] ")
+        case .blockquote: toggleLinePrefix(textView, prefix: "> ")
         case .link: insertLink(textView)
         case .inlineCode: wrap(textView, with: "`", placeholder: "code")
+        case .codeBlock: insertCodeBlock(textView)
         case .undo: textView.undoManager?.undo()
         case .redo: textView.undoManager?.redo()
         case .dismissKeyboard: textView.resignFirstResponder()
@@ -117,6 +121,23 @@ enum MarkdownTextOperator {
             location: max(lineRange.location, selection.location + delta),
             length: selection.length
         )
+    }
+
+    // MARK: - Code block
+
+    private static func insertCodeBlock(_ textView: UITextView) {
+        let selectedRange = textView.selectedRange
+        let nsText = textView.text as NSString
+        let selectedText = nsText.substring(with: selectedRange)
+        let inner = selectedText.isEmpty ? "code" : selectedText
+        let snippet = "```\n\(inner)\n```"
+
+        textView.replaceText(in: selectedRange, with: snippet)
+
+        // Select the inner content (after the opening "```\n") so the user can
+        // overtype it immediately.
+        let innerStart = selectedRange.location + 4
+        textView.selectedRange = NSRange(location: innerStart, length: (inner as NSString).length)
     }
 
     // MARK: - Link
