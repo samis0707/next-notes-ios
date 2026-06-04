@@ -45,21 +45,16 @@ struct NoteEditorScreen: View {
     @State private var showRename = false
     @State private var renameDraft = ""
 
-    // Increments each time the user picks "Find in Note" from the floating
-    // action pill — the MarkdownTextViewRepresentable watches the value and
+    // Increments each time the user picks "Find in Note" from the bottom
+    // action bar — the MarkdownTextViewRepresentable watches the value and
     // asks the UITextView's `findInteraction` to present its native search
     // bar.
     @State private var findToken = 0
 
-    // Drives the bottom floating action pill. The pill is hidden while the
-    // keyboard is up so the user gets the full editor area + markdown
-    // formatting bar.
-    @State private var isKeyboardVisible = false
-
-    // Pushing a fresh editor on top of the current one when the user taps
-    // the "+" button in the floating pill — stacking semantics, swipe-back
-    // returns to the previously edited note.
-    @State private var navigateToNewNoteRoute: NoteRoute?
+    // Increments each time the user taps the bottom bar's "Edit" button. The
+    // MarkdownTextViewRepresentable watches it and makes the text view first
+    // responder, bringing up the keyboard + formatting bar.
+    @State private var focusToken = 0
 
     // Sensory-feedback triggers — see NotesList for the pattern.
     @State private var openTrigger = 0
@@ -76,6 +71,7 @@ struct NoteEditorScreen: View {
         MarkdownTextViewRepresentable(
             text: $content,
             findToken: findToken,
+            focusToken: focusToken,
             onTextChange: handleTextChange
         )
         .background(Color(.systemBackground))
@@ -96,6 +92,8 @@ struct NoteEditorScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 actionMenu
             }
+
+            bottomBarContent
         }
         .alert(
             String(localized: "Rename note", comment: "Title of rename alert"),
@@ -146,24 +144,6 @@ struct NoteEditorScreen: View {
         } message: {
             Text("This action cannot be undone.")
         }
-        .navigationDestination(item: $navigateToNewNoteRoute) { route in
-            if let resolved = try? managedObjectContext.existingObject(with: route.objectID) as? Note {
-                NoteEditorScreen(note: resolved)
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if !isKeyboardVisible {
-                floatingActionPill
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: isKeyboardVisible)
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            isKeyboardVisible = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            isKeyboardVisible = false
-        }
         .onAppear(perform: bootstrapIfNeeded)
         .onDisappear(perform: persistImmediately)
         .sensoryFeedback(.selection, trigger: openTrigger)
@@ -171,60 +151,86 @@ struct NoteEditorScreen: View {
         .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
 
-    // MARK: - Floating action pill
+    // MARK: - Bottom bar
 
-    /// Five-button floating bar at the bottom of the editor, visible only
-    /// when the keyboard is hidden. Mirrors the structure of the notes list's
-    /// bottom bar for a consistent iOS-26 look.
-    private var floatingActionPill: some View {
-        HStack(spacing: 0) {
-            pillButton(systemImage: "text.page.badge.magnifyingglass", label: "Preview") {
-                showPreview = true
+    /// The editor's action bar (Preview / Share / Find · Category / New note)
+    /// as a native bottom toolbar. The system hides it behind the keyboard
+    /// automatically, so there is no manual keyboard tracking.
+    ///
+    /// On iOS 26 it renders as Liquid Glass with `ToolbarSpacer` separation and
+    /// a `.glassProminent` compose action. Those APIs are iOS 26-only, so on
+    /// iOS 17–25 we fall back to a single grouped bar with a flexible `Spacer`
+    /// and a bordered-prominent compose button.
+    @ToolbarContentBuilder
+    private var bottomBarContent: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItemGroup(placement: .bottomBar) {
+                previewButton
+                shareButton
+                findButton
             }
-            pillButton(systemImage: "square.and.arrow.up", label: "Share") {
-                showShare = true
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItemGroup(placement: .bottomBar) {
+                categoryButton
+                editButton
+                    .buttonStyle(.glassProminent)
             }
-            pillButton(systemImage: "magnifyingglass", label: "Find in Note") {
-                findToken &+= 1
-            }
-            pillButton(systemImage: "folder", label: "Category") {
-                showCategory = true
-            }
-            pillButton(systemImage: "square.and.pencil", label: "New note", emphasised: true) {
-                createNewNoteFromEditor()
+        } else {
+            ToolbarItemGroup(placement: .bottomBar) {
+                previewButton
+                shareButton
+                findButton
+                Spacer()
+                categoryButton
+                editButton
+                    .buttonStyle(.borderedProminent)
             }
         }
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.separator, lineWidth: 0.5))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
     }
 
-    private func pillButton(
-        systemImage: String,
-        label: String,
-        emphasised: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18))
-                .foregroundStyle(emphasised ? Color.accentColor : Color.primary)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
+    private var previewButton: some View {
+        Button {
+            showPreview = true
+        } label: {
+            Image(systemName: "text.page.badge.magnifyingglass")
         }
-        .accessibilityLabel(Text(label))
+        .accessibilityLabel(Text("Preview"))
     }
 
-    private func createNewNoteFromEditor() {
-        persistImmediately()
-        NoteSessionManager.shared.add(content: "", category: note.category) { newNote in
-            if let newNote {
-                Task { @MainActor in
-                    navigateToNewNoteRoute = NoteRoute(objectID: newNote.objectID)
-                }
-            }
+    private var shareButton: some View {
+        Button {
+            showShare = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
         }
+        .accessibilityLabel(Text("Share"))
+    }
+
+    private var findButton: some View {
+        Button {
+            findToken &+= 1
+        } label: {
+            Image(systemName: "magnifyingglass")
+        }
+        .accessibilityLabel(Text("Find in Note"))
+    }
+
+    private var categoryButton: some View {
+        Button {
+            showCategory = true
+        } label: {
+            Image(systemName: "folder")
+        }
+        .accessibilityLabel(Text("Category"))
+    }
+
+    private var editButton: some View {
+        Button {
+            focusToken &+= 1
+        } label: {
+            Image(systemName: "pencil")
+        }
+        .accessibilityLabel(Text("Edit"))
     }
 
     // MARK: - Title + subtitle (principal toolbar slot)
@@ -252,8 +258,11 @@ struct NoteEditorScreen: View {
                         .truncationMode(.tail)
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
             .frame(maxWidth: 220)
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
+            .modifier(GlassPillBackground())
         }
         .buttonStyle(.plain)
         .accessibilityHint(Text("Rename"))
@@ -460,6 +469,23 @@ struct NoteEditorScreen: View {
 }
 
 // MARK: - Helpers reused from NotesList
+
+/// Wraps content in a pill that uses real Liquid Glass on iOS 26 and falls
+/// back to a thin-material capsule on iOS 17–25, where `.glassEffect` does not
+/// exist. Used for the editor's floating title/timestamp header so it matches
+/// the bottom action bar's pill treatment.
+private struct GlassPillBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.separator, lineWidth: 0.5))
+        }
+    }
+}
 
 private struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]

@@ -19,6 +19,7 @@ import UIKit
 struct MarkdownTextViewRepresentable: UIViewRepresentable {
     @Binding var text: String
     let findToken: Int
+    let focusToken: Int
     let onTextChange: () -> Void
 
     func makeUIView(context: Context) -> MarkdownTextView {
@@ -39,6 +40,18 @@ struct MarkdownTextViewRepresentable: UIViewRepresentable {
             context.coordinator.lastFindToken = findToken
             if findToken > 0 {
                 uiView.findInteraction?.presentFindNavigator(showingReplace: false)
+            }
+        }
+
+        // Make the text view first responder when the SwiftUI side bumps the
+        // focus token (the bottom bar's "Edit" button). Dispatched async so we
+        // don't call `becomeFirstResponder` in the middle of a view update.
+        if focusToken != context.coordinator.lastFocusToken {
+            context.coordinator.lastFocusToken = focusToken
+            if focusToken > 0 {
+                DispatchQueue.main.async {
+                    uiView.becomeFirstResponder()
+                }
             }
         }
 
@@ -66,6 +79,7 @@ struct MarkdownTextViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarkdownTextViewRepresentable
         var lastFindToken = 0
+        var lastFocusToken = 0
 
         init(parent: MarkdownTextViewRepresentable) {
             self.parent = parent
