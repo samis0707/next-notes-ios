@@ -80,6 +80,12 @@ protocol Storing: Observable {
     var notesPath: String { get set }
 
     ///
+    /// The default folder (category) applied to newly created notes when no
+    /// other category context is active. Subfolders are separated by `/`.
+    ///
+    var defaultCategory: String { get set }
+
+    ///
     /// Whether synchronization is forcefully disabled or not.
     ///
     var offlineMode: Bool { get set }

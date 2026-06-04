@@ -106,6 +106,15 @@ struct KeychainHelper {
         }
     }
 
+    static var defaultCategory: String {
+        get {
+            return UserDefaults.standard.string(forKey: "DefaultCategory") ?? ""
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "DefaultCategory")
+        }
+    }
+
     static var fileSuffix: FileSuffix {
         get {
             return FileSuffix(rawValue: UserDefaults.standard.integer(forKey: "FileSuffix")) ?? FileSuffix.txt

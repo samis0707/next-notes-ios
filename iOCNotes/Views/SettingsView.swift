@@ -22,8 +22,10 @@ struct SettingsView: View {
     @State var initialFileExtensionDefinition = false
 
     @State var pathInAlert: String = ""
+    @State var categoryInAlert: String = ""
     @State var showLogoutConfirmation = false
     @State var showPathAlert = false
+    @State var showCategoryAlert = false
 
     var body: some View {
         @Bindable var store = store
@@ -85,6 +87,17 @@ struct SettingsView: View {
                             // Nothing to do here yet.
                         }
                     }
+                }
+
+                Section {
+                    FormDetailView("Default Folder", detail: $store.defaultCategory) {
+                        categoryInAlert = $store.defaultCategory.wrappedValue
+                        showCategoryAlert = true
+                    }
+                } header: {
+                    Text("New Notes")
+                } footer: {
+                    Text("New notes are created in this folder. Use a slash to nest subfolders, e.g. “Work/Projects”. Leave empty for no folder.")
                 }
 
                 Section("About This App") {
@@ -149,6 +162,27 @@ struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
             } message: {
                 Text("Enter a name for the folder where notes should be saved on the server")
+            }
+            // Default folder alert
+            .alert("Default Folder", isPresented: $showCategoryAlert) {
+                TextField("Folder", text: $categoryInAlert)
+
+                Button(role: .cancel) {
+                    showCategoryAlert = false
+                } label: {
+                    Text("Cancel")
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button {
+                    showCategoryAlert = false
+                    $store.defaultCategory.wrappedValue = categoryInAlert.trimmingCharacters(in: .whitespacesAndNewlines)
+                } label: {
+                    Text("Save")
+                }
+                .keyboardShortcut(.defaultAction)
+            } message: {
+                Text("New notes are placed in this folder. Use a slash to nest subfolders.")
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

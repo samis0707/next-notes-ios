@@ -278,6 +278,16 @@ final class Store: Logging, Storing {
         }
     }
 
+    var defaultCategory: String {
+        get {
+            KeychainHelper.defaultCategory
+        }
+        set {
+            logger.debug("Setting default category to \"\(newValue)\".")
+            KeychainHelper.defaultCategory = newValue
+        }
+    }
+
     var offlineMode: Bool {
         get {
             KeychainHelper.offlineMode
