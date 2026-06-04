@@ -12,9 +12,11 @@ import SwiftUI
 ///
 /// * No bottom tab bar — Settings now lives behind a gear button in the top
 ///   right of the navigation bar and presents as a sheet.
-/// * The trailing "+" button moved out of the navigation bar to a floating
-///   action pill at the bottom of the screen, next to a search field (as a
-///   wide capsule) and a category filter button.
+/// * Search uses the native `.searchable` modifier (top pull-down drawer,
+///   system Liquid Glass) rather than a hand-rolled bottom search field.
+/// * The category-filter and new-note buttons live in a native `.bottomBar`
+///   toolbar, so the system renders them as real Liquid Glass — no custom
+///   `.regularMaterial` capsules.
 ///
 struct NotesList: View {
     @Environment(Store.self) private var store
@@ -76,6 +78,8 @@ struct NotesList: View {
                         .controlSize(.small)
                 }
             }
+
+            bottomBarContent
         }
         .onChange(of: searchText) {
             applyPredicate()
@@ -86,9 +90,10 @@ struct NotesList: View {
         .refreshable {
             await refresh()
         }
-        .safeAreaInset(edge: .bottom) {
-            floatingBottomBar
-        }
+        .searchable(
+            text: $searchText,
+            prompt: String(localized: "Search", comment: "Placeholder for the search field in the notes list")
+        )
         .confirmationDialog(
             Text("Delete this note?"),
             isPresented: deleteDialogBinding,
@@ -232,43 +237,34 @@ struct NotesList: View {
         .listStyle(.plain)
     }
 
-    // MARK: - Floating bottom bar
+    // MARK: - Bottom bar
 
-    private var floatingBottomBar: some View {
-        HStack(spacing: 8) {
-            searchPill
-            categoryFilterButton
-            newNoteButton
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-    }
-
-    private var searchPill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField(
-                String(localized: "Search", comment: "Placeholder for the search field in the notes list"),
-                text: $searchText
-            )
-            .textFieldStyle(.plain)
-            .submitLabel(.search)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("Clear search"))
+    /// Category-filter and new-note actions in a native bottom toolbar.
+    ///
+    /// On iOS 26 these render as genuine Liquid Glass: `ToolbarSpacer` provides
+    /// the system inter-group separation and the compose action uses the
+    /// `.glassProminent` button style. Those APIs don't exist before iOS 26, so
+    /// on iOS 17–25 we fall back to a single grouped bar with a flexible
+    /// `Spacer` and a bordered-prominent compose button.
+    @ToolbarContentBuilder
+    private var bottomBarContent: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .bottomBar) {
+                categoryFilterButton
+            }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                newNoteButton
+                    .buttonStyle(.glassProminent)
+            }
+        } else {
+            ToolbarItemGroup(placement: .bottomBar) {
+                categoryFilterButton
+                Spacer()
+                newNoteButton
+                    .buttonStyle(.borderedProminent)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.separator, lineWidth: 0.5))
     }
 
     private var categoryFilterButton: some View {
@@ -276,12 +272,8 @@ struct NotesList: View {
             showCategoryFilter = true
         } label: {
             Image(systemName: selectedCategory == nil ? "folder" : "folder.fill")
-                .font(.system(size: 18))
-                .frame(width: 44, height: 44)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().stroke(.separator, lineWidth: 0.5))
-                .foregroundStyle(selectedCategory == nil ? Color.primary : Color.accentColor)
         }
+        .tint(selectedCategory == nil ? nil : Color.accentColor)
         .accessibilityLabel(Text("Filter by category"))
     }
 
@@ -290,10 +282,6 @@ struct NotesList: View {
             createNote()
         } label: {
             Image(systemName: "square.and.pencil")
-                .font(.system(size: 18))
-                .frame(width: 44, height: 44)
-                .background(Color.accentColor, in: Circle())
-                .foregroundStyle(.white)
         }
         .accessibilityLabel(Text("New note"))
     }
@@ -303,8 +291,9 @@ struct NotesList: View {
     private func createNote() {
         addTrigger &+= 1
         // Apply the active category filter to the freshly created note so it
-        // remains visible in the currently filtered list.
-        let initialCategory = selectedCategory ?? ""
+        // remains visible in the currently filtered list. With no filter
+        // active, fall back to the user's configured default folder.
+        let initialCategory = selectedCategory ?? store.defaultCategory
         NoteSessionManager.shared.add(content: "", category: initialCategory) { newNote in
             if let newNote {
                 Task { @MainActor in
